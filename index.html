@@ -1,968 +1,1569 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0d9488" />
-  <title>Convergence — think your way to the same word</title>
-  <meta name="description" content="A family word association game: can you and your partner think your way to the same word?" />
-  <!--
-    CONVERGENCE - pass-and-play prototype (single-file demo build)
-    Host on GitHub Pages: put this file at the repo root as index.html,
-    then Settings -> Pages -> Deploy from branch -> main / root.
-    Uses React via CDN + in-browser Babel: fine for a demo, swap to a
-    real build (Vite) when this becomes a product.
-  -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="description" content="Convergence – a real-time two-player word association game." />
+<meta name="theme-color" content="#0d9488" />
+<title>Convergence — think your way to the same word</title>
+
+<!-- ============================================================
+     SUPABASE CDN
+     ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  /* ============================================================
+     DESIGN TOKENS — preserved exactly from prototype
+     ============================================================ */
+  :root {
+    --cream: #faf8f3;
+    --cream-dark: #f0ece0;
+    --teal: #0d9488;
+    --teal-light: #14b8a6;
+    --teal-dark: #0f766e;
+    --yellow: #f59e0b;
+    --yellow-light: #fbbf24;
+    --yellow-pale: #fef3c7;
+    --text: #1c1917;
+    --text-muted: #78716c;
+    --text-light: #a8a29e;
+    --white: #ffffff;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+    --shadow-lg: 0 10px 28px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.06);
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--cream);
+    color: var(--text);
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: flex-start; justify-content: center;
+  }
+  #app {
+    width: 100%; max-width: 480px;
+    min-height: 100vh; min-height: 100dvh;
+    padding: 0 0 env(safe-area-inset-bottom, 16px);
+  }
+  .screen {
+    display: none; flex-direction: column; align-items: center;
+    padding: 20px 16px 32px;
+    min-height: 100vh; min-height: 100dvh;
+  }
+  .screen.active { display: flex; }
+
+  /* Logo */
+  .logo-wrap { margin-bottom: 4px; }
+  .venn-svg { display: block; }
+
+  /* Typography */
+  h1.game-title { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px; color: var(--teal-dark); text-align: center; line-height: 1.1; }
+  .subtitle { font-size: 1rem; color: var(--text-muted); text-align: center; margin-top: 6px; line-height: 1.5; max-width: 300px; }
+  h2 { font-size: 1.4rem; font-weight: 700; color: var(--teal-dark); text-align: center; margin-bottom: 8px; }
+  h3 { font-size: 1.1rem; font-weight: 700; color: var(--teal-dark); margin-bottom: 4px; }
+  p { font-size: 0.95rem; color: var(--text-muted); line-height: 1.55; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-family: var(--font); font-size: 1rem; font-weight: 700;
+    padding: 14px 24px; border-radius: var(--radius-md); border: none; cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+    width: 100%; min-height: 52px; text-align: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .btn-primary { background: var(--teal); color: #fff; box-shadow: var(--shadow-md); }
+  .btn-primary:hover:not(:disabled) { background: var(--teal-light); }
+  .btn-secondary { background: var(--white); color: var(--teal); box-shadow: var(--shadow-sm); border: 2px solid var(--teal); }
+  .btn-secondary:hover:not(:disabled) { background: var(--cream-dark); }
+  .btn-yellow { background: var(--yellow); color: #fff; box-shadow: var(--shadow-md); }
+  .btn-yellow:hover:not(:disabled) { background: var(--yellow-light); }
+  .btn-ghost { background: transparent; color: var(--text-muted); font-weight: 600; box-shadow: none; }
+  .btn-ghost:hover { color: var(--teal); }
+  .btn-sm { font-size: 0.875rem; padding: 10px 16px; min-height: 40px; }
+  .btn-danger { background: #fff; color: #dc2626; border: 2px solid #dc2626; box-shadow: var(--shadow-sm); }
+
+  /* Cards */
+  .card { background: var(--white); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 20px; width: 100%; margin-bottom: 12px; }
+
+  /* Stack layout */
+  .stack { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .stack-sm { gap: 6px; }
+  .stack-lg { gap: 16px; }
+
+  /* Top nav */
+  .top-nav { display: flex; align-items: center; width: 100%; padding: 16px 0 8px; gap: 8px; }
+  .top-nav-back { background: var(--white); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; box-shadow: var(--shadow-sm); flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
+  .top-nav-title { font-size: 1rem; font-weight: 700; color: var(--teal-dark); flex: 1; }
+
+  /* Forms */
+  .form-group { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .form-label { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .form-input { font-family: var(--font); font-size: 1rem; padding: 14px 16px; border-radius: var(--radius-sm); border: 2px solid var(--cream-dark); background: var(--white); color: var(--text); width: 100%; transition: border-color 0.15s; min-height: 50px; outline: none; }
+  .form-input:focus { border-color: var(--teal); }
+  .form-input::placeholder { color: var(--text-light); }
+
+  /* Badges */
+  .badge { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .badge-teal { background: var(--teal); color: #fff; }
+  .badge-yellow { background: var(--yellow); color: #fff; }
+
+  /* Home */
+  #screen-home { justify-content: center; gap: 0; }
+  .home-hero { display: flex; flex-direction: column; align-items: center; padding: 32px 0 28px; gap: 8px; }
+
+  /* Room code display */
+  .room-code-display {
+    background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+    border-radius: var(--radius-lg); padding: 24px 20px;
+    text-align: center; width: 100%; color: #fff;
+    box-shadow: var(--shadow-lg);
+  }
+  .room-code-display .rcd-label { font-size: 0.8rem; font-weight: 700; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .room-code-display .rcd-code { font-size: 3rem; font-weight: 900; letter-spacing: 0.25em; line-height: 1; }
+  .room-code-display .rcd-sub { font-size: 0.85rem; opacity: 0.75; margin-top: 8px; }
+
+  /* Waiting state */
+  .waiting-box {
+    background: var(--white); border-radius: var(--radius-md);
+    padding: 20px; text-align: center; width: 100%;
+    box-shadow: var(--shadow-sm); border: 2px dashed var(--cream-dark);
+  }
+  .waiting-box .wb-icon { font-size: 2rem; margin-bottom: 8px; }
+  .waiting-box .wb-text { font-size: 1rem; font-weight: 700; color: var(--text-muted); }
+  .waiting-box .wb-sub { font-size: 0.85rem; color: var(--text-light); margin-top: 4px; }
+
+  /* Spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 24px; height: 24px; border: 3px solid var(--cream-dark); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto; }
+
+  /* Error message */
+  .error-msg { background: #fee2e2; border: 2px solid #fca5a5; border-radius: var(--radius-sm); padding: 12px 16px; font-size: 0.9rem; font-weight: 600; color: #991b1b; width: 100%; text-align: center; }
+
+  /* Difficulty options */
+  .diff-option { display: flex; align-items: center; gap: 14px; background: var(--white); border: 2px solid var(--cream-dark); border-radius: var(--radius-md); padding: 14px 16px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; width: 100%; text-align: left; -webkit-tap-highlight-color: transparent; }
+  .diff-option:hover { border-color: var(--teal); box-shadow: var(--shadow-sm); }
+  .diff-option.selected { border-color: var(--teal); background: #f0fdfa; box-shadow: var(--shadow-sm); }
+  .diff-icon { font-size: 1.5rem; width: 36px; text-align: center; }
+  .diff-info { flex: 1; }
+  .diff-label { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .diff-desc { font-size: 0.825rem; color: var(--text-muted); margin-top: 1px; }
+  .diff-pts { font-size: 0.85rem; font-weight: 700; color: var(--teal); }
+
+  /* Word card */
+  .word-card { background: linear-gradient(145deg, var(--teal), var(--teal-dark)); border-radius: var(--radius-lg); padding: 28px 20px; width: 100%; box-shadow: var(--shadow-lg); color: #fff; text-align: center; position: relative; overflow: hidden; }
+  .word-card::before { content: ''; position: absolute; top: -30px; right: -30px; width: 120px; height: 120px; background: rgba(255,255,255,0.06); border-radius: 50%; }
+  .word-card-label { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; margin-bottom: 4px; }
+  .word-card-player { font-size: 1.1rem; font-weight: 800; margin-bottom: 20px; }
+  .word-card-words { display: flex; flex-direction: column; gap: 10px; }
+  .word-option { background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.2); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+  .word-option-level { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; width: 48px; text-align: left; flex-shrink: 0; }
+  .word-option-word { font-size: 1.2rem; font-weight: 800; flex: 1; text-align: center; }
+  .word-option-note { font-size: 0.75rem; opacity: 0.6; flex-shrink: 0; }
+
+  /* Active pair */
+  .active-pair { display: flex; align-items: center; gap: 12px; background: var(--white); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-md); width: 100%; justify-content: center; }
+  .pair-word { font-size: 1.3rem; font-weight: 800; color: var(--teal-dark); text-align: center; flex: 1; background: var(--cream); border-radius: var(--radius-sm); padding: 12px 8px; }
+  .pair-plus { font-size: 1.4rem; color: var(--text-light); font-weight: 300; flex-shrink: 0; }
+
+  /* Reveal */
+  .reveal-pair { display: flex; gap: 12px; width: 100%; }
+  .reveal-word-box { flex: 1; background: var(--white); border-radius: var(--radius-md); padding: 16px; text-align: center; box-shadow: var(--shadow-md); border: 2px solid var(--cream-dark); transition: border-color 0.3s; }
+  .reveal-word-box.match { border-color: var(--teal); background: #f0fdfa; }
+  .reveal-word-box-player { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .reveal-word-box-word { font-size: 1.5rem; font-weight: 800; color: var(--text); }
+
+  .convergence-banner { background: linear-gradient(135deg, var(--teal), var(--teal-dark)); color: #fff; border-radius: var(--radius-md); padding: 20px; text-align: center; width: 100%; box-shadow: var(--shadow-lg); animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .convergence-banner .cb-icon { font-size: 2rem; margin-bottom: 4px; }
+  .convergence-banner .cb-title { font-size: 1.3rem; font-weight: 800; }
+  .convergence-banner .cb-word { font-size: 2rem; font-weight: 900; margin: 4px 0; }
+  .convergence-banner .cb-sub { font-size: 0.9rem; opacity: 0.8; }
+
+  .no-match-banner { background: var(--yellow-pale); border: 2px solid var(--yellow); border-radius: var(--radius-md); padding: 16px; text-align: center; width: 100%; }
+  .no-match-banner p { color: var(--text); font-size: 0.95rem; }
+  .no-match-banner strong { color: var(--teal-dark); }
+
+  /* Attempt history */
+  .attempt-row { background: var(--white); border-radius: var(--radius-sm); padding: 12px 14px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 4px; border-left: 4px solid var(--cream-dark); width: 100%; }
+  .attempt-row.converged { border-left-color: var(--teal); }
+  .attempt-row-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .attempt-num { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .attempt-words { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .attempt-word { font-size: 1rem; font-weight: 700; background: var(--cream); padding: 4px 10px; border-radius: 100px; color: var(--text); }
+  .attempt-word.same { background: var(--teal); color: #fff; }
+  .attempt-vs { font-size: 0.8rem; color: var(--text-light); }
+
+  /* Results */
+  .result-score-box { background: linear-gradient(135deg, var(--teal), var(--teal-dark)); color: #fff; border-radius: var(--radius-lg); padding: 24px; width: 100%; text-align: center; box-shadow: var(--shadow-lg); }
+  .result-score-level { font-size: 0.85rem; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.06em; }
+  .result-score-num { font-size: 3rem; font-weight: 900; line-height: 1; margin: 6px 0; }
+  .result-score-label { font-size: 0.9rem; opacity: 0.8; }
+  .result-stat-row { display: flex; gap: 10px; width: 100%; }
+  .result-stat { flex: 1; background: var(--white); border-radius: var(--radius-md); padding: 14px; text-align: center; box-shadow: var(--shadow-sm); }
+  .result-stat-val { font-size: 1.4rem; font-weight: 800; color: var(--teal-dark); }
+  .result-stat-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .word-path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
+  .word-path-word { font-size: 0.875rem; font-weight: 700; background: var(--cream-dark); padding: 4px 12px; border-radius: 100px; color: var(--text); }
+  .word-path-word.start { background: var(--teal); color: #fff; }
+  .word-path-word.end { background: var(--teal-dark); color: #fff; }
+  .word-path-arrow { color: var(--text-light); font-size: 0.85rem; }
+
+  /* Score history */
+  .history-round-card { background: var(--white); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); width: 100%; display: flex; align-items: flex-start; gap: 14px; border-left: 4px solid var(--teal); }
+  .history-round-num { font-size: 0.75rem; font-weight: 800; color: var(--teal); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; padding-top: 2px; }
+  .history-round-info { flex: 1; }
+  .history-round-word { font-size: 1.1rem; font-weight: 800; color: var(--text); }
+  .history-round-meta { font-size: 0.825rem; color: var(--text-muted); margin-top: 2px; }
+  .history-round-score { font-size: 1.3rem; font-weight: 900; color: var(--teal-dark); text-align: right; white-space: nowrap; }
+  .history-round-score-lbl { font-size: 0.7rem; color: var(--text-muted); text-align: right; }
+
+  /* How to play */
+  .rule-step { display: flex; gap: 14px; align-items: flex-start; background: var(--white); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); width: 100%; }
+  .rule-step-icon { font-size: 1.5rem; width: 36px; text-align: center; flex-shrink: 0; padding-top: 2px; }
+  .rule-step-text h3 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .rule-step-text p { font-size: 0.85rem; color: var(--text-muted); }
+
+  /* Example screen */
+  .example-step { background: var(--white); border-radius: var(--radius-md); padding: 16px; width: 100%; box-shadow: var(--shadow-sm); }
+  .example-step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .example-step-num { background: var(--teal); color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 800; flex-shrink: 0; }
+
+  /* Attempt counter badge */
+  .attempt-counter { display: flex; align-items: center; gap: 8px; background: var(--white); border-radius: 100px; padding: 6px 16px; box-shadow: var(--shadow-sm); font-size: 0.875rem; font-weight: 700; color: var(--text-muted); width: fit-content; align-self: center; }
+  .attempt-counter .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); }
+
+  /* Utility */
+  .spacer { flex: 1; }
+  .mt-4 { margin-top: 4px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .text-center { text-align: center; width: 100%; }
+  .text-sm { font-size: 0.875rem; }
+  .text-muted { color: var(--text-muted); }
+  .section-label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; width: 100%; }
+  .divider { width: 100%; height: 1px; background: var(--cream-dark); margin: 4px 0; }
+
+  /* Animations */
+  @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  .pop-in { animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .slide-up { animation: slideUp 0.35s ease; }
+  .pulsing { animation: pulse 1.5s ease-in-out infinite; }
+
+  /* Copy link button */
+  .copy-link-btn { font-size: 0.8rem; font-weight: 700; color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 100px; padding: 5px 14px; cursor: pointer; margin-top: 8px; -webkit-tap-highlight-color: transparent; }
+  .copy-link-btn:active { background: rgba(255,255,255,0.25); }
+</style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useCallback } = React;
+<div id="app">
 
+  <!-- ======================================================
+       HOME SCREEN
+       ====================================================== -->
+  <div id="screen-home" class="screen active">
+    <div class="home-hero">
+      <div class="logo-wrap">
+        <svg width="80" height="52" viewBox="0 0 80 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="28" cy="26" r="24" fill="#0d9488" fill-opacity="0.85"/>
+          <circle cx="52" cy="26" r="24" fill="#f59e0b" fill-opacity="0.85"/>
+          <ellipse cx="40" cy="26" rx="10" ry="20" fill="#0f766e" fill-opacity="0.7"/>
+        </svg>
+      </div>
+      <h1 class="game-title">Convergence</h1>
+      <p class="subtitle">Can you and your partner think your way to the same word?</p>
+    </div>
+    <div class="stack">
+      <button class="btn btn-primary" onclick="UI.showScreen('screen-create')">🌐 Create Online Room</button>
+      <button class="btn btn-secondary" onclick="UI.showScreen('screen-join')">🔗 Join a Room</button>
+      <button class="btn btn-ghost" onclick="UI.showScreen('screen-how')">? How to Play</button>
+      <button class="btn btn-ghost" onclick="showLocalHistory()">📋 Score History</button>
+      <button class="btn btn-ghost" onclick="UI.showScreen('screen-example')">✦ Example Round</button>
+    </div>
+  </div>
 
-/* ---------------------------------- data --------------------------------- */
+  <!-- ======================================================
+       CREATE ROOM SCREEN
+       ====================================================== -->
+  <div id="screen-create" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="UI.showScreen('screen-home')">←</button>
+      <span class="top-nav-title">Create Room</span>
+    </div>
+    <div class="stack stack-lg mt-8">
+      <div class="card">
+        <div class="stack">
+          <div class="form-group">
+            <label class="form-label">Your Name</label>
+            <input class="form-input" id="create-name" type="text" placeholder="Player 1" maxlength="20" />
+          </div>
+        </div>
+      </div>
+      <div id="create-error" style="display:none" class="error-msg"></div>
+      <button class="btn btn-primary" id="btn-create" onclick="createRoom()">Create Room →</button>
+    </div>
+  </div>
 
+  <!-- ======================================================
+       LOBBY SCREEN (waiting for P2)
+       ====================================================== -->
+  <div id="screen-lobby" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="leaveRoom()">←</button>
+      <span class="top-nav-title">Room Created</span>
+    </div>
+    <div class="stack stack-lg mt-8">
+      <div class="room-code-display slide-up">
+        <div class="rcd-label">Room Code</div>
+        <div class="rcd-code" id="lobby-code"></div>
+        <div class="rcd-sub">Share this code with your partner</div>
+        <button class="copy-link-btn" onclick="copyLink()">📋 Copy invite link</button>
+      </div>
+      <div class="waiting-box pulsing">
+        <div class="wb-icon">⏳</div>
+        <div class="wb-text">Waiting for Player 2…</div>
+        <div class="wb-sub">Ask them to open the app and enter your code</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       JOIN ROOM SCREEN
+       ====================================================== -->
+  <div id="screen-join" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="UI.showScreen('screen-home')">←</button>
+      <span class="top-nav-title">Join Room</span>
+    </div>
+    <div class="stack stack-lg mt-8">
+      <div class="card">
+        <div class="stack">
+          <div class="form-group">
+            <label class="form-label">Your Name</label>
+            <input class="form-input" id="join-name" type="text" placeholder="Player 2" maxlength="20" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Room Code</label>
+            <input class="form-input" id="join-code" type="text" placeholder="ABCD" maxlength="4"
+              style="text-transform:uppercase;letter-spacing:0.2em;font-weight:800;font-size:1.3rem"
+              oninput="this.value=this.value.toUpperCase()" />
+          </div>
+        </div>
+      </div>
+      <div id="join-error" style="display:none" class="error-msg"></div>
+      <button class="btn btn-primary" id="btn-join" onclick="joinRoom()">Join Room →</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       CARD VIEWING SCREEN
+       Both players land here after P2 joins.
+       Each sees only their own card.
+       ====================================================== -->
+  <div id="screen-card" class="screen">
+    <div class="top-nav">
+      <span class="top-nav-title" id="card-screen-title">Your Card</span>
+      <span class="badge badge-teal" id="card-screen-badge">Private</span>
+    </div>
+    <p class="text-muted text-sm text-center mt-4" style="max-width:300px">These are your words — don't tell your partner! You'll pick difficulty together after both of you are ready.</p>
+    <div class="word-card mt-12 slide-up">
+      <div class="word-card-label">Your Word Options</div>
+      <div class="word-card-player" id="my-card-player-name"></div>
+      <div class="word-card-words" id="my-card-words"></div>
+    </div>
+    <div class="spacer"></div>
+    <div id="card-ready-status" class="waiting-box mt-12" style="display:none">
+      <div class="wb-text pulsing">Waiting for <span id="card-waiting-name"></span>…</div>
+    </div>
+    <button class="btn btn-primary mt-16" id="btn-card-ready" onclick="markCardReady()">I've seen my card →</button>
+  </div>
+
+  <!-- ======================================================
+       DIFFICULTY SELECTION SCREEN
+       Only Player 1 can confirm difficulty.
+       Player 2 sees a waiting state.
+       ====================================================== -->
+  <div id="screen-difficulty" class="screen">
+    <div class="top-nav">
+      <span class="top-nav-title">Choose Difficulty</span>
+    </div>
+    <p class="text-muted text-sm text-center" style="max-width:320px" id="diff-instructions">
+      Both players have seen their cards. Agree on a difficulty — without saying your actual words!
+    </p>
+
+    <!-- P1 sees the selectors -->
+    <div id="diff-selectors" class="stack mt-12">
+      <button class="diff-option" id="diff-easy" onclick="selectDiff('easy')">
+        <span class="diff-icon">🟢</span>
+        <div class="diff-info"><div class="diff-label">Easy</div><div class="diff-desc">Familiar, broader connections</div></div>
+        <span class="diff-pts">3 pts/try</span>
+      </button>
+      <button class="diff-option" id="diff-medium" onclick="selectDiff('medium')">
+        <span class="diff-icon">🟡</span>
+        <div class="diff-info"><div class="diff-label">Medium</div><div class="diff-desc">A real mental workout</div></div>
+        <span class="diff-pts">2 pts/try</span>
+      </button>
+      <button class="diff-option" id="diff-hard" onclick="selectDiff('hard')">
+        <span class="diff-icon">🔴</span>
+        <div class="diff-info"><div class="diff-label">Hard</div><div class="diff-desc">Tricky — can you still converge?</div></div>
+        <span class="diff-pts">1 pt/try</span>
+      </button>
+      <button class="btn btn-primary" id="btn-start-round" onclick="confirmDifficulty()" disabled>Start Round →</button>
+    </div>
+
+    <!-- P2 sees a waiting message -->
+    <div id="diff-waiting" class="waiting-box mt-12" style="display:none">
+      <div class="wb-icon">🤝</div>
+      <div class="wb-text">Waiting for Player 1 to set difficulty…</div>
+      <div class="wb-sub">Talk it over with your partner first!</div>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       PLAYING SCREEN
+       Both players see the active pair.
+       Each submits privately. After submitting, they see
+       a "waiting" state until the other player submits.
+       ====================================================== -->
+  <div id="screen-playing" class="screen">
+    <div class="top-nav">
+      <span class="top-nav-title" id="playing-title">Your Turn</span>
+      <span class="attempt-counter"><span class="dot"></span><span id="playing-attempt-label">Attempt 1</span></span>
+    </div>
+    <p class="text-muted text-sm text-center" style="max-width:320px">
+      What single word connects or bridges both of these words?
+    </p>
+    <div class="active-pair mt-12 fade-in">
+      <div class="pair-word" id="playing-word-a"></div>
+      <div class="pair-plus">+</div>
+      <div class="pair-word" id="playing-word-b"></div>
+    </div>
+
+    <!-- Input — shown before submission -->
+    <div id="playing-input-area" class="form-group mt-12">
+      <label class="form-label" id="playing-input-label">Your connecting word</label>
+      <input class="form-input" id="playing-input" type="text" placeholder="One word only…"
+        maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <div id="playing-error" style="display:none;margin-top:4px" class="error-msg"></div>
+    </div>
+
+    <!-- Submitted confirmation — shown after submission -->
+    <div id="playing-submitted" style="display:none" class="mt-12">
+      <div class="card" style="text-align:center;border:2px solid var(--teal)">
+        <div style="font-size:0.8rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Your word</div>
+        <div style="font-size:1.6rem;font-weight:900;color:var(--teal-dark)" id="playing-my-word-display"></div>
+      </div>
+      <div class="waiting-box pulsing mt-8">
+        <div class="wb-text">Waiting for <span id="playing-waiting-name"></span>…</div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+    <button class="btn btn-primary mt-16" id="btn-submit-word" onclick="submitWord()">Lock in my word →</button>
+  </div>
+
+  <!-- ======================================================
+       REVEAL SCREEN
+       Both players see this simultaneously.
+       Only Player 1 can press "Next attempt" to avoid race conditions.
+       ====================================================== -->
+  <div id="screen-reveal" class="screen">
+    <div class="top-nav">
+      <span class="top-nav-title">Attempt <span id="reveal-attempt-num"></span> Reveal</span>
+    </div>
+    <div class="reveal-pair mt-8 pop-in">
+      <div class="reveal-word-box" id="reveal-box-p1">
+        <div class="reveal-word-box-player" id="reveal-name-p1"></div>
+        <div class="reveal-word-box-word" id="reveal-word-p1"></div>
+      </div>
+      <div class="reveal-word-box" id="reveal-box-p2">
+        <div class="reveal-word-box-player" id="reveal-name-p2"></div>
+        <div class="reveal-word-box-word" id="reveal-word-p2"></div>
+      </div>
+    </div>
+    <div id="reveal-result" class="mt-12 fade-in" style="width:100%"></div>
+    <div class="stack mt-12">
+      <div class="section-label">Word path so far</div>
+      <div id="reveal-history-list" class="stack stack-sm"></div>
+    </div>
+    <div class="spacer"></div>
+    <div id="reveal-actions" class="stack mt-16"></div>
+  </div>
+
+  <!-- ======================================================
+       RESULTS SCREEN
+       ====================================================== -->
+  <div id="screen-results" class="screen">
+    <div class="top-nav">
+      <span class="top-nav-title">Round Complete!</span>
+    </div>
+    <div class="result-score-box mt-8 pop-in">
+      <div class="result-score-level" id="res-level"></div>
+      <div class="result-score-num" id="res-score"></div>
+      <div class="result-score-label">Final Score (lower is better)</div>
+    </div>
+    <div class="result-stat-row mt-12">
+      <div class="result-stat"><div class="result-stat-val" id="res-attempts"></div><div class="result-stat-lbl">Attempts</div></div>
+      <div class="result-stat"><div class="result-stat-val" id="res-diff"></div><div class="result-stat-lbl">Difficulty</div></div>
+      <div class="result-stat"><div class="result-stat-val" id="res-base"></div><div class="result-stat-lbl">Base pts</div></div>
+    </div>
+    <div class="card mt-12">
+      <div class="section-label" style="margin-bottom:8px">Convergence Word</div>
+      <div style="font-size:1.8rem;font-weight:900;color:var(--teal-dark)" id="res-conv-word"></div>
+      <div class="section-label mt-12" style="margin-bottom:8px">Word Path</div>
+      <div class="word-path" id="res-word-path"></div>
+    </div>
+    <div class="card">
+      <div class="section-label" style="margin-bottom:6px">Players</div>
+      <div style="font-size:1rem;font-weight:700;color:var(--text)" id="res-players"></div>
+    </div>
+    <div class="stack mt-4">
+      <button class="btn btn-primary" onclick="startNewRoom()">▶ New Room</button>
+      <button class="btn btn-secondary" onclick="showLocalHistory()">📋 Score History</button>
+      <button class="btn btn-ghost" onclick="UI.showScreen('screen-home')">← Back to Home</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       LOCAL SCORE HISTORY SCREEN
+       ====================================================== -->
+  <div id="screen-history" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="UI.showScreen('screen-home')">←</button>
+      <span class="top-nav-title">Score History</span>
+    </div>
+    <div id="history-list" class="stack mt-8" style="width:100%"></div>
+    <div class="spacer"></div>
+    <button class="btn btn-danger mt-16 btn-sm" id="btn-clear-history" onclick="clearLocalHistory()">Clear History</button>
+  </div>
+
+  <!-- ======================================================
+       HOW TO PLAY
+       ====================================================== -->
+  <div id="screen-how" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="UI.showScreen('screen-home')">←</button>
+      <span class="top-nav-title">How to Play</span>
+    </div>
+    <div class="stack mt-8">
+      <div class="rule-step">
+        <div class="rule-step-icon">🌐</div>
+        <div class="rule-step-text"><h3>Create or join a room</h3><p>One player creates a room and shares the 4-letter code. The other player enters it to join.</p></div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-step-icon">🃏</div>
+        <div class="rule-step-text"><h3>Each player gets a private card</h3><p>Your card shows three words — Easy, Medium, and Hard. Only you can see your card.</p></div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-step-icon">🤝</div>
+        <div class="rule-step-text"><h3>Agree on difficulty</h3><p>Talk it over with your partner and agree on Easy, Medium, or Hard — without saying your actual words aloud. Player 1 confirms the choice.</p></div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-step-icon">🧠</div>
+        <div class="rule-step-text"><h3>Submit connecting words</h3><p>Each player independently types one word that bridges the active pair. Both answers are revealed at the same time.</p></div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-step-icon">🎯</div>
+        <div class="rule-step-text"><h3>Converge!</h3><p>If your words match — you've converged! If not, your two submitted words become the new active pair. Keep going until you match.</p></div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-step-icon">🏆</div>
+        <div class="rule-step-text"><h3>Scoring</h3><p><strong>Easy:</strong> 3 pts × attempts &nbsp;·&nbsp; <strong>Medium:</strong> 2 pts × attempts &nbsp;·&nbsp; <strong>Hard:</strong> 1 pt × attempts. Lower is better!</p></div>
+      </div>
+    </div>
+    <button class="btn btn-primary mt-16" onclick="UI.showScreen('screen-home')">Got it! ✓</button>
+  </div>
+
+  <!-- ======================================================
+       EXAMPLE ROUND
+       ====================================================== -->
+  <div id="screen-example" class="screen">
+    <div class="top-nav">
+      <button class="top-nav-back" onclick="UI.showScreen('screen-home')">←</button>
+      <span class="top-nav-title">Example Round</span>
+    </div>
+    <p class="text-muted text-sm text-center" style="max-width:320px">Sam and Alex are playing on Medium difficulty.</p>
+    <div class="stack mt-12">
+      <div class="example-step">
+        <div class="example-step-header"><div class="example-step-num">1</div><h3>Starting pair</h3></div>
+        <div class="active-pair"><div class="pair-word">OCEAN</div><div class="pair-plus">+</div><div class="pair-word">CLOCK</div></div>
+      </div>
+      <div class="example-step">
+        <div class="example-step-header"><div class="example-step-num">2</div><h3>Attempt 1 — both submit a bridge word</h3></div>
+        <div class="reveal-pair">
+          <div class="reveal-word-box"><div class="reveal-word-box-player">Sam</div><div class="reveal-word-box-word">TIDE</div></div>
+          <div class="reveal-word-box"><div class="reveal-word-box-player">Alex</div><div class="reveal-word-box-word">WAVE</div></div>
+        </div>
+        <p class="mt-8" style="font-size:0.85rem">No match. TIDE and WAVE become the new pair.</p>
+      </div>
+      <div class="example-step">
+        <div class="example-step-header"><div class="example-step-num">3</div><h3>Attempt 2 — bridging TIDE + WAVE</h3></div>
+        <div class="reveal-pair">
+          <div class="reveal-word-box match"><div class="reveal-word-box-player">Sam</div><div class="reveal-word-box-word">SURF</div></div>
+          <div class="reveal-word-box match"><div class="reveal-word-box-player">Alex</div><div class="reveal-word-box-word">SURF</div></div>
+        </div>
+        <div class="convergence-banner mt-8" style="padding:14px">
+          <div class="cb-icon">🎉</div><div class="cb-title">Convergence on SURF!</div>
+          <div class="cb-sub">2 attempts × 2 pts (Medium) = Score: 4</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary mt-16" onclick="UI.showScreen('screen-home')">Got it — let's play! →</button>
+  </div>
+
+</div><!-- /#app -->
+
+<script>
+// ============================================================
+// SUPABASE CONFIG
+// Replace these two values with your own Supabase project.
+// Find them at: https://supabase.com → your project → Settings → API
+// ============================================================
+const SUPABASE_URL     = "https://bpsbuqamrpzltseqtqum.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwc2J1cWFtcnB6bHRzZXF0cXVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExODg4NjcsImV4cCI6MjA5Njc2NDg2N30.TYIsP_R0dmiaIqLbcxSS1pDoRksnPOs4oi2eUlIsKDY";
+
+// ============================================================
+// SUPABASE CLIENT
+// ============================================================
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// WORD DECK — 60 cards, each with easy / medium / hard
+// ============================================================
 const DECK = [
-  { id: 1, easy: "Dog", medium: "Leash", hard: "Obedience" },
-  { id: 2, easy: "Car", medium: "Highway", hard: "Gridlock" },
-  { id: 3, easy: "Tree", medium: "Forest", hard: "Canopy" },
-  { id: 4, easy: "Apple", medium: "Orchard", hard: "Photosynthesis" },
-  { id: 5, easy: "Ball", medium: "Bounce", hard: "Trajectory" },
-  { id: 6, easy: "Ocean", medium: "Wave", hard: "Current" },
-  { id: 7, easy: "Sun", medium: "Solar", hard: "Fusion" },
-  { id: 8, easy: "House", medium: "Roof", hard: "Insulation" },
-  { id: 9, easy: "Train", medium: "Tracks", hard: "Locomotive" },
-  { id: 10, easy: "Chair", medium: "Furniture", hard: "Upholstery" },
-  { id: 11, easy: "Book", medium: "Library", hard: "Bibliophile" },
-  { id: 12, easy: "Cat", medium: "Whiskers", hard: "Nocturnal" },
-  { id: 13, easy: "Rain", medium: "Umbrella", hard: "Precipitation" },
-  { id: 14, easy: "Bread", medium: "Toast", hard: "Fermentation" },
-  { id: 15, easy: "Plane", medium: "Airport", hard: "Turbulence" },
-  { id: 16, easy: "Star", medium: "Constellation", hard: "Supernova" },
-  { id: 17, easy: "Ice", medium: "Glacier", hard: "Permafrost" },
-  { id: 18, easy: "Fish", medium: "Aquarium", hard: "Biodiversity" },
-  { id: 19, easy: "Camera", medium: "Lens", hard: "Aperture" },
-  { id: 20, easy: "Mountain", medium: "Summit", hard: "Altitude" },
-  { id: 21, easy: "Cake", medium: "Frosting", hard: "Celebration" },
-  { id: 22, easy: "Fish", medium: "River", hard: "Ecosystem" },
-  { id: 23, easy: "Table", medium: "Wood", hard: "Carpenter" },
-  { id: 24, easy: "Phone", medium: "Text", hard: "Notification" },
-  { id: 25, easy: "Moon", medium: "Crater", hard: "Lunar Eclipse" },
-  { id: 26, easy: "Flower", medium: "Petal", hard: "Pollination" },
-  { id: 27, easy: "Beach", medium: "Sandcastle", hard: "Erosion" },
-  { id: 28, easy: "Light", medium: "Bulb", hard: "Incandescence" },
-  { id: 29, easy: "Spider", medium: "Web", hard: "Arachnid" },
-  { id: 30, easy: "Shirt", medium: "Fabric", hard: "Tailor" },
-  { id: 31, easy: "Tree", medium: "Shade", hard: "Photosynthesis" },
-  { id: 32, easy: "Dog", medium: "Collar", hard: "Domestication" },
-  { id: 33, easy: "Clock", medium: "Minute", hard: "Chronology" },
-  { id: 34, easy: "Movie", medium: "Popcorn", hard: "Cinematography" },
-  { id: 35, easy: "Ice", medium: "Freezer", hard: "Frostbite" },
-  { id: 36, easy: "Bridge", medium: "River", hard: "Engineering" },
-  { id: 37, easy: "Fire", medium: "Smoke", hard: "Combustion" },
-  { id: 38, easy: "Music", medium: "Rhythm", hard: "Syncopation" },
-  { id: 39, easy: "Door", medium: "Key", hard: "Security" },
-  { id: 40, easy: "Garden", medium: "Soil", hard: "Cultivation" },
+  {easy:"Sun",    medium:"Solar",    hard:"Equinox"},
+  {easy:"Tree",   medium:"Forest",   hard:"Canopy"},
+  {easy:"Dog",    medium:"Kennel",   hard:"Pedigree"},
+  {easy:"Rain",   medium:"Storm",    hard:"Monsoon"},
+  {easy:"Book",   medium:"Library",  hard:"Manuscript"},
+  {easy:"Fire",   medium:"Ember",    hard:"Kindle"},
+  {easy:"Ice",    medium:"Glacier",  hard:"Permafrost"},
+  {easy:"Bird",   medium:"Feather",  hard:"Migration"},
+  {easy:"Moon",   medium:"Crater",   hard:"Apogee"},
+  {easy:"Gold",   medium:"Nugget",   hard:"Ingot"},
+  {easy:"Water",  medium:"Current",  hard:"Tributary"},
+  {easy:"Castle", medium:"Moat",     hard:"Rampart"},
+  {easy:"Music",  medium:"Melody",   hard:"Cadence"},
+  {easy:"River",  medium:"Delta",    hard:"Meander"},
+  {easy:"Star",   medium:"Nebula",   hard:"Pulsar"},
+  {easy:"Clock",  medium:"Pendulum", hard:"Meridian"},
+  {easy:"Cave",   medium:"Stalactite",hard:"Spelunking"},
+  {easy:"Ship",   medium:"Anchor",   hard:"Starboard"},
+  {easy:"Mountain",medium:"Summit",  hard:"Escarpment"},
+  {easy:"Farm",   medium:"Harvest",  hard:"Fallow"},
+  {easy:"Crown",  medium:"Throne",   hard:"Regency"},
+  {easy:"Stone",  medium:"Quarry",   hard:"Basalt"},
+  {easy:"Road",   medium:"Cobble",   hard:"Thoroughfare"},
+  {easy:"Window", medium:"Pane",     hard:"Casement"},
+  {easy:"Map",    medium:"Compass",  hard:"Cartography"},
+  {easy:"Bread",  medium:"Yeast",    hard:"Ferment"},
+  {easy:"Mirror", medium:"Prism",    hard:"Refraction"},
+  {easy:"Bell",   medium:"Toll",     hard:"Carillon"},
+  {easy:"Chair",  medium:"Timber",   hard:"Joinery"},
+  {easy:"Bridge", medium:"Arch",     hard:"Abutment"},
+  {easy:"Sand",   medium:"Dune",     hard:"Sediment"},
+  {easy:"Coin",   medium:"Mint",     hard:"Bullion"},
+  {easy:"Cloud",  medium:"Cumulus",  hard:"Stratus"},
+  {easy:"Paper",  medium:"Scroll",   hard:"Vellum"},
+  {easy:"Key",    medium:"Vault",    hard:"Cipher"},
+  {easy:"Light",  medium:"Prism",    hard:"Spectrum"},
+  {easy:"Horn",   medium:"Brass",    hard:"Overture"},
+  {easy:"Rope",   medium:"Knot",     hard:"Rigging"},
+  {easy:"Hammer", medium:"Forge",    hard:"Anvil"},
+  {easy:"Fish",   medium:"Shoal",    hard:"Plankton"},
+  {easy:"Flower", medium:"Petal",    hard:"Pistil"},
+  {easy:"Paint",  medium:"Canvas",   hard:"Fresco"},
+  {easy:"Drum",   medium:"Rhythm",   hard:"Syncopation"},
+  {easy:"Sail",   medium:"Mast",     hard:"Rigging"},
+  {easy:"Apple",  medium:"Orchard",  hard:"Cultivar"},
+  {easy:"Snow",   medium:"Blizzard", hard:"Sleet"},
+  {easy:"Wire",   medium:"Circuit",  hard:"Conduit"},
+  {easy:"Mask",   medium:"Theater",  hard:"Masquerade"},
+  {easy:"Ink",    medium:"Quill",    hard:"Calligraphy"},
+  {easy:"Fox",    medium:"Burrow",   hard:"Vixen"},
+  {easy:"Wheel",  medium:"Axle",     hard:"Spoke"},
+  {easy:"Lantern",medium:"Wick",     hard:"Tallow"},
+  {easy:"Arrow",  medium:"Quiver",   hard:"Fletching"},
+  {easy:"Gem",    medium:"Facet",    hard:"Lapidary"},
+  {easy:"Smoke",  medium:"Chimney",  hard:"Flue"},
+  {easy:"Thread", medium:"Loom",     hard:"Warp"},
+  {easy:"Bone",   medium:"Marrow",   hard:"Cortex"},
+  {easy:"Fence",  medium:"Post",     hard:"Paling"},
+  {easy:"Cup",    medium:"Goblet",   hard:"Chalice"},
+  {easy:"Wave",   medium:"Crest",    hard:"Swell"},
 ];
 
-const BASE_SCORE = { easy: 3, medium: 2, hard: 1 };
-const DIFFICULTY_LABEL = { easy: "Easy", medium: "Medium", hard: "Hard" };
-
-const LEVELS = [
-  { max: 3, title: "Perfect Sync", desc: "Your minds matched perfectly." },
-  { max: 6, title: "Psychic Link", desc: "Practically telepathic." },
-  { max: 10, title: "In the Zone", desc: "You're on the right wavelength." },
-  { max: 15, title: "Close Callers", desc: "Circling the same idea." },
-  { max: 20, title: "The Think Tank", desc: "Finding solutions together." },
-  { max: 30, title: "Persistence Pays", desc: "Determination gets the win." },
-  { max: Infinity, title: "Lost in Translation", desc: "Got there eventually." },
-];
-
-const levelFor = (score) => LEVELS.find((l) => score <= l.max);
-const norm = (w) => (w || "").trim().toLowerCase().replace(/\s+/g, " ");
-
-/* ----------------------- storage (localStorage-safe) ---------------------- */
-
-const storage = (() => {
-  const mem = {};
-  try {
-    const t = "__convergence_test__";
-    window.localStorage.setItem(t, "1");
-    window.localStorage.removeItem(t);
-    return {
-      get: (k) => window.localStorage.getItem(k),
-      set: (k, v) => window.localStorage.setItem(k, v),
-      remove: (k) => window.localStorage.removeItem(k),
-    };
-  } catch {
-    return {
-      get: (k) => (k in mem ? mem[k] : null),
-      set: (k, v) => { mem[k] = v; },
-      remove: (k) => { delete mem[k]; },
-    };
-  }
-})();
-
-const HISTORY_KEY = "convergence_history_v1";
-const loadHistory = () => {
-  try { return JSON.parse(storage.get(HISTORY_KEY)) || []; }
-  catch { return []; }
+// ============================================================
+// LOCAL STATE
+// Things that live only in this browser tab
+// ============================================================
+const Local = {
+  playerId:   null,   // random UUID for this browser session
+  playerRole: null,   // 'p1' or 'p2'
+  roomId:     null,   // Supabase row UUID
+  roomCode:   null,   // 4-letter code
+  myName:     null,
+  myCard:     null,   // {easy,medium,hard} — only this player's card
+  selectedDiff: null, // locally selected diff (P1 only) before confirming
+  hasSubmitted: false,// whether this player already submitted this attempt
+  submitting: false,  // debounce flag
+  realtimeSub: null,  // Supabase subscription handle
 };
-const saveHistory = (h) => storage.set(HISTORY_KEY, JSON.stringify(h));
 
-/* --------------------------------- styles -------------------------------- */
+// ============================================================
+// UI HELPERS
+// ============================================================
+const UI = {
+  showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById(id);
+    if (el) { el.classList.add('active'); el.scrollTop = 0; window.scrollTo(0,0); }
+  },
+  setError(elId, msg) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  },
+  clearError(elId) { this.setError(elId, ''); },
+  setBtnLoading(id, loading) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = loading;
+  },
+};
 
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,600&display=swap');
+// ============================================================
+// UTILS
+// ============================================================
+function normalize(s) { return (s || '').trim().toLowerCase(); }
 
-:root {
-  --ink: #134e4a;
-  --teal: #0d9488;
-  --teal-deep: #0f766e;
-  --teal-soft: #ccfbf1;
-  --teal-mist: #f0fdfa;
-  --yellow: #fbbf24;
-  --yellow-soft: #fef3c7;
-  --cream: #fffdf7;
-  --white: #ffffff;
-  --rose: #fb7185;
-  --shadow: 0 10px 30px rgba(19, 78, 74, 0.12);
-  --radius: 22px;
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+function scoreLevel(score) {
+  if (score <= 2) return "🏆 Telepathic";
+  if (score <= 4) return "🥇 Brilliant";
+  if (score <= 6) return "🥈 Sharp";
+  if (score <= 10) return "🥉 Solid";
+  return "💬 Keep Practicing";
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-.cv-root {
-  min-height: 100vh;
-  background:
-    radial-gradient(900px 500px at 85% -10%, rgba(251,191,36,0.16), transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, rgba(13,148,136,0.12), transparent 60%),
-    var(--cream);
-  color: var(--ink);
-  font-family: 'Nunito', system-ui, sans-serif;
-  font-size: 17px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+function randomId() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
 
-.cv-shell { width: 100%; max-width: 560px; padding: 20px 18px 56px; }
-
-.cv-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 2px 22px;
-}
-.cv-wordmark {
-  display: flex; align-items: center; gap: 10px;
-  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
-  letter-spacing: 0.2px; cursor: pointer; background: none; border: none;
-  color: var(--ink);
-}
-.cv-topbar-links { display: flex; gap: 6px; }
-
-h1, h2, h3 { font-family: 'Fredoka', sans-serif; }
-h1 { font-size: clamp(44px, 11vw, 64px); font-weight: 700; line-height: 1.02; letter-spacing: -1px; }
-h2 { font-size: 28px; font-weight: 600; }
-h3 { font-size: 19px; font-weight: 600; }
-
-.cv-eyebrow {
-  font-size: 13px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase;
-  color: var(--teal); margin-bottom: 10px;
-}
-.cv-sub { color: #3f6864; font-size: 18px; line-height: 1.5; }
-.cv-micro { font-size: 14px; color: #5b7f7b; }
-
-.cv-btn {
-  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px;
-  border: none; border-radius: 999px; padding: 15px 28px; cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-}
-.cv-btn:active { transform: scale(0.97); }
-.cv-btn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
-.cv-btn-primary { background: var(--teal); color: var(--white); box-shadow: 0 8px 20px rgba(13,148,136,0.35); }
-.cv-btn-primary:hover { background: var(--teal-deep); }
-.cv-btn-yellow { background: var(--yellow); color: var(--ink); box-shadow: 0 8px 20px rgba(251,191,36,0.35); }
-.cv-btn-yellow:hover { background: #f4b418; }
-.cv-btn-ghost { background: var(--white); color: var(--ink); border: 2px solid #d6ebe8; }
-.cv-btn-ghost:hover { border-color: var(--teal); }
-.cv-btn-quiet { background: none; color: var(--teal-deep); font-size: 15px; padding: 8px 14px; }
-.cv-btn-quiet:hover { background: var(--teal-mist); }
-.cv-btn-block { width: 100%; }
-.cv-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
-
-.cv-stack { display: flex; flex-direction: column; gap: 14px; }
-.cv-panel {
-  background: var(--white); border-radius: var(--radius); padding: 26px 24px;
-  box-shadow: var(--shadow);
-}
-.cv-center { text-align: center; }
-
-/* hero */
-.cv-hero { text-align: center; padding: 30px 0 10px; }
-.cv-hero .cv-logo { margin: 0 auto 22px; }
-.cv-hero p { margin: 14px auto 30px; max-width: 380px; }
-
-/* venn logo */
-.cv-logo { display: block; }
-
-/* playing card */
-.cv-cardflip { perspective: 1200px; width: min(310px, 84vw); margin: 0 auto; }
-.cv-cardflip-inner {
-  position: relative; width: 100%; aspect-ratio: 5/7;
-  transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4, 0.1, 0.2, 1);
-}
-.cv-cardflip.is-flipped .cv-cardflip-inner { transform: rotateY(180deg); }
-.cv-cardface {
-  position: absolute; inset: 0; border-radius: 24px; backface-visibility: hidden;
-  -webkit-backface-visibility: hidden; box-shadow: var(--shadow); overflow: hidden;
-}
-.cv-cardback {
-  background: var(--teal);
-  display: flex; align-items: center; justify-content: center;
-  border: 8px solid var(--white);
-}
-.cv-cardfront {
-  background: var(--white); transform: rotateY(180deg);
-  border: 8px solid var(--white);
-  display: flex; flex-direction: column; justify-content: center; gap: 14px;
-  padding: 26px 22px;
-}
-.cv-cardrow {
-  background: var(--teal-mist); border-radius: 16px; padding: 13px 16px;
-  display: flex; flex-direction: column; gap: 2px; text-align: left;
-}
-.cv-cardrow.is-medium { background: var(--yellow-soft); }
-.cv-cardrow.is-hard { background: #ffe9ec; }
-.cv-cardrow .lbl { font-size: 12px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #5b7f7b; }
-.cv-cardrow .wrd { font-family: 'Fredoka', sans-serif; font-size: 24px; font-weight: 600; }
-
-/* word chips */
-.cv-words { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
-.cv-chip {
-  background: var(--white); border: 2px solid var(--teal-soft); border-radius: 999px;
-  padding: 10px 20px; font-family: 'Fredoka', sans-serif; font-size: 20px; font-weight: 600;
-  box-shadow: 0 4px 12px rgba(19,78,74,0.08);
-}
-.cv-chip.is-yellow { border-color: var(--yellow-soft); }
-.cv-chip-owner { display: block; font-family: 'Nunito'; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #5b7f7b; }
-.cv-plus { font-family: 'Fredoka', sans-serif; font-size: 22px; color: var(--teal); font-weight: 600; }
-
-/* reveal animation */
-@keyframes slideL { from { opacity: 0; transform: translateX(-60px); } to { opacity: 1; transform: none; } }
-@keyframes slideR { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
-@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
-.cv-anim-l { animation: slideL 0.5s ease both; }
-.cv-anim-r { animation: slideR 0.5s ease both; }
-.cv-anim-pop { animation: pop 0.5s ease 0.45s both; }
-
-/* big countdown digits */
-.cv-bigcount {
-  font-family: 'Fredoka', sans-serif; font-size: 110px; font-weight: 700; color: var(--teal);
-  line-height: 1; animation: pop 0.4s ease both;
-}
-.cv-bigcount.is-go { font-size: 44px; color: var(--ink); }
-
-/* timer ring */
-.cv-timer { display: flex; align-items: center; gap: 10px; justify-content: center; }
-.cv-timer .num { font-family: 'Fredoka', sans-serif; font-size: 22px; font-weight: 600; min-width: 40px; }
-.cv-timer.is-low .num { color: var(--rose); }
-
-/* inputs */
-.cv-input {
-  width: 100%; font-family: 'Fredoka', sans-serif; font-size: 24px; font-weight: 500;
-  text-align: center; padding: 16px 18px; border-radius: 18px;
-  border: 2px solid #d6ebe8; background: var(--white); color: var(--ink);
-}
-.cv-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 4px rgba(13,148,136,0.15); }
-.cv-input-sm { font-size: 18px; font-family: 'Nunito'; font-weight: 700; text-align: left; }
-
-/* difficulty buttons */
-.cv-diff { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.cv-diffbtn {
-  display: flex; align-items: center; justify-content: space-between;
-  background: var(--white); border: 2px solid #d6ebe8; border-radius: 18px;
-  padding: 18px 20px; cursor: pointer; font-family: 'Nunito';
-  transition: border-color 0.12s, transform 0.12s;
-  text-align: left;
-}
-.cv-diffbtn:hover { border-color: var(--teal); transform: translateY(-2px); }
-.cv-diffbtn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
-.cv-diffbtn .nm { font-family: 'Fredoka', sans-serif; font-size: 22px; font-weight: 600; }
-.cv-diffbtn .pts { font-size: 14px; font-weight: 800; color: var(--teal-deep); background: var(--teal-mist); border-radius: 999px; padding: 6px 12px; }
-
-/* attempt history */
-.cv-attempts { display: flex; flex-direction: column; gap: 8px; }
-.cv-attemptrow {
-  display: flex; align-items: center; gap: 10px; font-size: 15px;
-  background: var(--teal-mist); border-radius: 14px; padding: 10px 14px;
-}
-.cv-attemptrow.is-match { background: var(--yellow-soft); }
-.cv-attemptrow .tag {
-  font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--teal-deep); min-width: 70px;
-}
-.cv-attemptrow .pair { font-weight: 700; }
-
-/* results */
-.cv-score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0; }
-.cv-stat { background: var(--teal-mist); border-radius: 16px; padding: 14px; text-align: center; }
-.cv-stat .v { font-family: 'Fredoka', sans-serif; font-size: 28px; font-weight: 600; }
-.cv-stat .k { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #5b7f7b; }
-.cv-levelbadge {
-  background: var(--yellow); border-radius: 18px; padding: 16px 20px; text-align: center;
-  box-shadow: 0 8px 20px rgba(251,191,36,0.35);
-}
-.cv-levelbadge .t { font-family: 'Fredoka', sans-serif; font-size: 26px; font-weight: 700; }
-
-/* history table */
-.cv-hist { display: flex; flex-direction: column; gap: 10px; }
-.cv-histrow {
-  background: var(--white); border-radius: 16px; padding: 14px 16px;
-  box-shadow: 0 4px 14px rgba(19,78,74,0.07);
-  display: flex; flex-direction: column; gap: 6px;
-}
-.cv-histrow .top { display: flex; justify-content: space-between; align-items: baseline; }
-.cv-histrow .rd { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 17px; }
-.cv-histrow .meta { font-size: 14px; color: #5b7f7b; }
-.cv-histrow .lv { font-weight: 800; color: var(--teal-deep); font-size: 14px; }
-
-/* modal */
-.cv-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(19,78,74,0.45); display: flex;
-  align-items: center; justify-content: center; padding: 18px; z-index: 50;
-}
-.cv-modal {
-  background: var(--white); border-radius: var(--radius); max-width: 520px; width: 100%;
-  max-height: 86vh; overflow-y: auto; padding: 28px 26px; box-shadow: var(--shadow);
-  animation: pop 0.3s ease both;
-}
-.cv-modal ol, .cv-modal ul { padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
-.cv-modal li { line-height: 1.5; }
-
-.cv-divider { border: none; border-top: 2px dashed #d6ebe8; margin: 18px 0; }
-
-.cv-banner {
-  background: var(--yellow-soft); border-radius: 14px; padding: 12px 16px;
-  font-size: 15px; font-weight: 700; text-align: center;
+function randomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O to avoid confusion
+  let code = '';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
-`;
-
-/* ------------------------------ small pieces ------------------------------ */
-
-function VennLogo({ size = 56 }) {
-  return (
-    <svg className="cv-logo" width={size} height={size * 0.7} viewBox="0 0 100 70" aria-hidden="true">
-      <circle cx="36" cy="35" r="28" fill="#0d9488" opacity="0.9" />
-      <circle cx="64" cy="35" r="28" fill="#fbbf24" opacity="0.9" />
-      <path d="M50 11.6a28 28 0 0 1 0 46.8 28 28 0 0 1 0-46.8z" fill="#fffdf7" />
-    </svg>
-  );
+function pickTwoCards() {
+  const idx1 = Math.floor(Math.random() * DECK.length);
+  let idx2 = Math.floor(Math.random() * (DECK.length - 1));
+  if (idx2 >= idx1) idx2++;
+  return [DECK[idx1], DECK[idx2]];
 }
 
-function TopBar({ go }) {
-  return (
-    <div className="cv-topbar">
-      <button className="cv-wordmark" onClick={() => go("home")} aria-label="Back to home">
-        <VennLogo size={34} /> Convergence
-      </button>
-      <div className="cv-topbar-links">
-        <button className="cv-btn cv-btn-quiet" onClick={() => go("history")}>History</button>
-        <button className="cv-btn cv-btn-quiet" onClick={() => go("howToPlay")}>Rules</button>
-      </div>
-    </div>
-  );
+// ============================================================
+// LOCAL STORAGE — player identity + score history
+// ============================================================
+function getLocalPlayerId() {
+  let id = localStorage.getItem('cvg_player_id');
+  if (!id) { id = randomId(); localStorage.setItem('cvg_player_id', id); }
+  return id;
 }
 
-/* 3-2-1 countdown */
-function Countdown({ onDone }) {
-  const [step, setStep] = useState(3);
-  useEffect(() => {
-    if (step === 0) { const t = setTimeout(onDone, 900); return () => clearTimeout(t); }
-    const t = setTimeout(() => setStep((s) => s - 1), 850);
-    return () => clearTimeout(t);
-  }, [step, onDone]);
-  return (
-    <div className="cv-center" style={{ padding: "40px 0" }} aria-live="assertive">
-      {step > 0
-        ? <div className="cv-bigcount" key={step}>{step}</div>
-        : <div className="cv-bigcount is-go" key="go">Say your word!</div>}
-    </div>
-  );
+function saveLocalRound(data) {
+  const rounds = getLocalRounds();
+  rounds.push({ ...data, date: new Date().toLocaleDateString(), roundNum: rounds.length + 1 });
+  localStorage.setItem('cvg_history', JSON.stringify(rounds));
 }
 
-/* 30-second think timer */
-function ThinkTimer({ resetKey }) {
-  const [left, setLeft] = useState(30);
-  useEffect(() => {
-    setLeft(30);
-    const iv = setInterval(() => setLeft((l) => (l > 0 ? l - 1 : 0)), 1000);
-    return () => clearInterval(iv);
-  }, [resetKey]);
-  const pct = left / 30;
-  return (
-    <div className={`cv-timer ${left <= 10 ? "is-low" : ""}`} aria-label={`${left} seconds left to think`}>
-      <svg width="34" height="34" viewBox="0 0 36 36">
-        <circle cx="18" cy="18" r="15" fill="none" stroke="#d6ebe8" strokeWidth="4" />
-        <circle cx="18" cy="18" r="15" fill="none" stroke={left <= 10 ? "#fb7185" : "#0d9488"} strokeWidth="4"
-          strokeDasharray={`${pct * 94.2} 94.2`} strokeLinecap="round" transform="rotate(-90 18 18)"
-          style={{ transition: "stroke-dasharray 1s linear" }} />
-      </svg>
-      <span className="num">{left > 0 ? `${left}s` : "Time!"}</span>
-      <span className="cv-micro">{left > 0 ? "to think of a connection" : "lock in your best word"}</span>
-    </div>
-  );
+function getLocalRounds() {
+  try { return JSON.parse(localStorage.getItem('cvg_history') || '[]'); } catch(e) { return []; }
 }
 
-/* flippable playing card */
-function CardDisplay({ card, flipped, highlight }) {
-  return (
-    <div className={`cv-cardflip ${flipped ? "is-flipped" : ""}`}>
-      <div className="cv-cardflip-inner">
-        <div className="cv-cardface cv-cardback"><VennLogo size={110} /></div>
-        <div className="cv-cardface cv-cardfront">
-          {["easy", "medium", "hard"].map((d) => (
-            <div key={d} className={`cv-cardrow is-${d}`}
-              style={highlight && highlight !== d ? { opacity: 0.35 } : undefined}>
-              <span className="lbl">{DIFFICULTY_LABEL[d]} · {BASE_SCORE[d]} pts</span>
-              <span className="wrd">{card[d]}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+// ============================================================
+// COPY INVITE LINK
+// ============================================================
+function copyLink() {
+  const url = `${location.origin}${location.pathname}?join=${Local.roomCode}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.querySelector('.copy-link-btn');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '📋 Copy invite link'; }, 2000); }
+  });
 }
 
-/* private word entry with pass-the-device gate */
-function PlayerWordEntry({ playerName, currentWords, attemptNo, onLock, timerKey }) {
-  const [ready, setReady] = useState(false);
-  const [word, setWord] = useState("");
-  const inputRef = useRef(null);
-  useEffect(() => { if (ready) inputRef.current?.focus(); }, [ready]);
-
-  if (!ready) {
-    return (
-      <div className="cv-panel cv-center cv-stack">
-        <div className="cv-eyebrow">Attempt {attemptNo} · Pass the device</div>
-        <h2>{playerName}'s turn</h2>
-        <p className="cv-sub">No peeking, other player! 👀</p>
-        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setReady(true)}>
-          I'm {playerName} — show me
-        </button>
-      </div>
-    );
+// Check if URL has a ?join= param and pre-fill the join screen
+function checkJoinParam() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('join');
+  if (code) {
+    const el = document.getElementById('join-code');
+    if (el) el.value = code.toUpperCase().slice(0, 4);
+    UI.showScreen('screen-join');
   }
-  return (
-    <div className="cv-panel cv-stack">
-      <div className="cv-eyebrow cv-center">Attempt {attemptNo} · {playerName}</div>
-      <div className="cv-words">
-        <span className="cv-chip">{currentWords[0]}</span>
-        <span className="cv-plus">+</span>
-        <span className="cv-chip is-yellow">{currentWords[1]}</span>
-      </div>
-      <ThinkTimer resetKey={timerKey} />
-      <p className="cv-micro cv-center">Think of one word that connects these two. Keep it secret!</p>
-      <input
-        ref={inputRef}
-        className="cv-input"
-        value={word}
-        placeholder="Your word…"
-        maxLength={30}
-        onChange={(e) => setWord(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && norm(word)) onLock(word); }}
-        aria-label={`${playerName}, enter your connecting word`}
-      />
-      <button className="cv-btn cv-btn-yellow cv-btn-block" disabled={!norm(word)} onClick={() => onLock(word)}>
-        Lock word 🔒
-      </button>
-    </div>
-  );
 }
 
-/* attempt path list */
-function AttemptHistory({ initialWords, attempts, players }) {
-  return (
-    <div className="cv-attempts">
-      <div className="cv-attemptrow">
-        <span className="tag">Start</span>
-        <span className="pair">{initialWords[0]} + {initialWords[1]}</span>
-      </div>
-      {attempts.map((a, i) => (
-        <div key={i} className={`cv-attemptrow ${a.match ? "is-match" : ""}`}>
-          <span className="tag">{a.match ? "Match!" : `Try ${i + 1}`}</span>
-          <span className="pair">{a.p1} + {a.p2}</span>
-        </div>
-      ))}
-      <p className="cv-micro" style={{ paddingLeft: 4 }}>
-        Left word = {players[0]} · right word = {players[1]}
-      </p>
-    </div>
-  );
-}
+// ============================================================
+// CREATE ROOM
+// ============================================================
+async function createRoom() {
+  const nameEl = document.getElementById('create-name');
+  const name = nameEl.value.trim() || 'Player 1';
+  UI.clearError('create-error');
+  UI.setBtnLoading('btn-create', true);
 
-/* results summary */
-function ScoreResult({ result, players }) {
-  const lvl = levelFor(result.score);
-  return (
-    <>
-      <div className="cv-score-grid">
-        <div className="cv-stat"><div className="v">{DIFFICULTY_LABEL[result.difficulty]}</div><div className="k">Difficulty</div></div>
-        <div className="cv-stat"><div className="v">{BASE_SCORE[result.difficulty]}</div><div className="k">Base score</div></div>
-        <div className="cv-stat"><div className="v">{result.attempts}</div><div className="k">Attempts</div></div>
-        <div className="cv-stat"><div className="v">{result.score}</div><div className="k">Final score</div></div>
-      </div>
-      <div className="cv-levelbadge">
-        <div className="t">{lvl.title}</div>
-        <div>{lvl.desc}</div>
-      </div>
-      <hr className="cv-divider" />
-      <h3 style={{ marginBottom: 10 }}>Your word path</h3>
-      <AttemptHistory initialWords={result.initialWords} attempts={result.path} players={players} />
-    </>
-  );
-}
+  try {
+    const [card1, card2] = pickTwoCards();
+    const code = randomCode();
+    const playerId = getLocalPlayerId();
 
-/* saved rounds */
-function ScoreHistory({ history, onClear }) {
-  if (history.length === 0) {
-    return (
-      <div className="cv-panel cv-center cv-stack">
-        <h2>No rounds yet</h2>
-        <p className="cv-sub">Play a round and your scores will show up here.</p>
-      </div>
-    );
+    const { data, error } = await db
+      .from('convergence_rooms')
+      .insert({
+        room_code:    code,
+        status:       'waiting_for_player',
+        player1_name: name,
+        player1_id:   playerId,
+        player1_card: card1,
+        player2_card: card2,
+        player1_ready: false,
+        player2_ready: false,
+        attempt_number: 0,
+        history: [],
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Save local state
+    Local.playerId   = playerId;
+    Local.playerRole = 'p1';
+    Local.roomId     = data.id;
+    Local.roomCode   = code;
+    Local.myName     = name;
+    Local.myCard     = card1;
+
+    // Show lobby and subscribe
+    document.getElementById('lobby-code').textContent = code;
+    UI.showScreen('screen-lobby');
+    subscribeToRoom(data.id);
+
+  } catch (err) {
+    UI.setError('create-error', 'Could not create room. Check your Supabase config.');
+    console.error(err);
+  } finally {
+    UI.setBtnLoading('btn-create', false);
   }
-  return (
-    <div className="cv-stack">
-      <div className="cv-hist">
-        {history.map((r) => (
-          <div className="cv-histrow" key={r.round + r.date}>
-            <div className="top">
-              <span className="rd">Round {r.round} — "{r.word}"</span>
-              <span className="lv">{r.level}</span>
-            </div>
-            <span className="meta">
-              {r.players[0]} & {r.players[1]} · {DIFFICULTY_LABEL[r.difficulty]} ·{" "}
-              {r.attempts} attempt{r.attempts === 1 ? "" : "s"} · {r.score} pts
-            </span>
-          </div>
-        ))}
-      </div>
-      <button className="cv-btn cv-btn-ghost" onClick={onClear}>Clear history</button>
-    </div>
-  );
 }
 
-/* how to play modal */
-function HowToPlayModal({ onClose }) {
-  return (
-    <div className="cv-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="How to play">
-      <div className="cv-modal cv-stack" onClick={(e) => e.stopPropagation()}>
-        <h2>How to play</h2>
-        <ol>
-          <li>Each player secretly draws a card with an <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> word.</li>
-          <li>Agree on a difficulty together — but <strong>never say any words from your cards</strong>.</li>
-          <li>The <strong>Initial Countdown</strong> reveals both starting words. It doesn't count as an attempt.</li>
-          <li>Each attempt, you have <strong>30 seconds</strong> to think of one word that connects the two current words. Enter it privately, then reveal together.</li>
-          <li>You win the round when you both say the <strong>exact same word</strong> — that's convergence!</li>
-        </ol>
-        <hr className="cv-divider" />
-        <h3>Scoring (lower is better)</h3>
-        <ul>
-          <li>Easy = 3 pts · Medium = 2 pts · Hard = 1 pt</li>
-          <li><strong>Final score = base score × attempts</strong></li>
-        </ul>
-        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={onClose}>Got it!</button>
-      </div>
-    </div>
-  );
+// ============================================================
+// JOIN ROOM
+// ============================================================
+async function joinRoom() {
+  const nameEl = document.getElementById('join-name');
+  const codeEl = document.getElementById('join-code');
+  const name = nameEl.value.trim() || 'Player 2';
+  const code = codeEl.value.trim().toUpperCase();
+
+  UI.clearError('join-error');
+
+  if (code.length !== 4) {
+    UI.setError('join-error', 'Room code must be 4 letters.');
+    return;
+  }
+
+  UI.setBtnLoading('btn-join', true);
+
+  try {
+    // Look up the room
+    const { data: room, error } = await db
+      .from('convergence_rooms')
+      .select('*')
+      .eq('room_code', code)
+      .single();
+
+    if (error || !room) {
+      UI.setError('join-error', 'Room not found. Check the code and try again.');
+      return;
+    }
+    if (room.status !== 'waiting_for_player') {
+      UI.setError('join-error', 'This room is already full or in progress.');
+      return;
+    }
+
+    const playerId = getLocalPlayerId();
+
+    // Update room with P2 info and move to card_setup
+    const { data: updated, error: updateError } = await db
+      .from('convergence_rooms')
+      .update({
+        player2_name: name,
+        player2_id:   playerId,
+        status:       'card_setup',
+        updated_at:   new Date().toISOString(),
+      })
+      .eq('id', room.id)
+      .eq('status', 'waiting_for_player') // guard against double-join race
+      .select()
+      .single();
+
+    if (updateError || !updated) {
+      UI.setError('join-error', 'Could not join. Room may have just filled up.');
+      return;
+    }
+
+    // Save local state
+    Local.playerId   = playerId;
+    Local.playerRole = 'p2';
+    Local.roomId     = room.id;
+    Local.roomCode   = code;
+    Local.myName     = name;
+    Local.myCard     = room.player2_card;   // P2's card was stored by P1 on creation
+
+    // Show card screen immediately
+    renderCardScreen(updated);
+    subscribeToRoom(room.id);
+
+  } catch (err) {
+    UI.setError('join-error', 'Something went wrong. Please try again.');
+    console.error(err);
+  } finally {
+    UI.setBtnLoading('btn-join', false);
+  }
 }
 
-/* scripted example round */
-function ExampleRound({ onBack }) {
-  const steps = [
-    { tag: "Cards", text: "Player 1 draws Tree / Forest / Canopy. Player 2 draws Stream / River / Tributary. Cards stay secret!" },
-    { tag: "Difficulty", text: "Both players agree on Medium (2 points per attempt)." },
-    { tag: "Countdown", text: "Initial Countdown reveals: Forest + River. This doesn't count as an attempt." },
-    { tag: "Attempt 1", text: "Player 1 says Nature, Player 2 says Stream. No match — keep going!" },
-    { tag: "Attempt 2", text: "Player 1 says Waterfall, Player 2 says Trail. So close, but no match." },
-    { tag: "Attempt 3", text: "Both say Hiking. Convergence! 🎉" },
-    { tag: "Score", text: "Medium (2) × 3 attempts = 6 points → Psychic Link: practically telepathic." },
-  ];
-  const [shown, setShown] = useState(1);
-  return (
-    <div className="cv-panel cv-stack">
-      <div className="cv-eyebrow">Example round</div>
-      <h2>Forest meets River</h2>
-      <div className="cv-attempts">
-        {steps.slice(0, shown).map((s, i) => (
-          <div key={i} className={`cv-attemptrow ${s.tag === "Attempt 3" || s.tag === "Score" ? "is-match" : ""}`}>
-            <span className="tag">{s.tag}</span>
-            <span style={{ lineHeight: 1.45 }}>{s.text}</span>
-          </div>
-        ))}
-      </div>
-      {shown < steps.length
-        ? <button className="cv-btn cv-btn-yellow" onClick={() => setShown(shown + 1)}>Next step →</button>
-        : <button className="cv-btn cv-btn-primary" onClick={onBack}>Back to home</button>}
-    </div>
-  );
+// ============================================================
+// REALTIME SUBSCRIPTION
+// Subscribes to all changes on this room row.
+// Called by both P1 and P2 after they have a roomId.
+// ============================================================
+function subscribeToRoom(roomId) {
+  // Clean up any old subscription
+  if (Local.realtimeSub) {
+    db.removeChannel(Local.realtimeSub);
+    Local.realtimeSub = null;
+  }
+
+  Local.realtimeSub = db
+    .channel('room-' + roomId)
+    .on('postgres_changes', {
+      event:  'UPDATE',
+      schema: 'public',
+      table:  'convergence_rooms',
+      filter: `id=eq.${roomId}`,
+    }, (payload) => {
+      handleRoomUpdate(payload.new);
+    })
+    .subscribe();
 }
 
-/* --------------------------------- the app -------------------------------- */
+// ============================================================
+// ROOM UPDATE HANDLER
+// This is the central dispatcher — called whenever the room
+// row changes in Supabase. It routes to the correct screen
+// based on the room's status and this browser's player role.
+// ============================================================
+function handleRoomUpdate(room) {
+  switch (room.status) {
+    case 'card_setup':
+      // P1 gets here via realtime when P2 joins
+      renderCardScreen(room);
+      break;
+    case 'difficulty_selection':
+      renderDifficultyScreen(room);
+      break;
+    case 'playing':
+      renderPlayingScreen(room);
+      break;
+    case 'reveal':
+      renderRevealScreen(room);
+      break;
+    case 'finished':
+      renderResultsScreen(room);
+      break;
+  }
+}
 
-function App() {
-  const [phase, setPhase] = useState("home");
-  const [players, setPlayers] = useState(["Player 1", "Player 2"]);
-  const [cards, setCards] = useState([null, null]);
-  const [cardFlipped, setCardFlipped] = useState(false);
-  const [difficulty, setDifficulty] = useState(null);
-  const [initialWords, setInitialWords] = useState([null, null]);
-  const [attempts, setAttempts] = useState([]);
-  const [pendingP1, setPendingP1] = useState(null);
-  const [result, setResult] = useState(null);
-  const [history, setHistory] = useState(loadHistory);
-  const [showRules, setShowRules] = useState(false);
+// ============================================================
+// CARD SCREEN
+// ============================================================
+function renderCardScreen(room) {
+  // Show only MY card
+  const card = Local.myCard;
+  document.getElementById('my-card-player-name').textContent = Local.myName + "'s Card";
 
-  const go = useCallback((p) => { setPhase(p); setCardFlipped(false); }, []);
+  const wordsEl = document.getElementById('my-card-words');
+  wordsEl.innerHTML = '';
+  [
+    { key: 'easy',   label: 'Easy',   pts: '3 pts' },
+    { key: 'medium', label: 'Medium', pts: '2 pts' },
+    { key: 'hard',   label: 'Hard',   pts: '1 pt'  },
+  ].forEach(({ key, label, pts }) => {
+    const div = document.createElement('div');
+    div.className = 'word-option';
+    div.innerHTML = `<span class="word-option-level">${label}</span><span class="word-option-word">${card[key].toUpperCase()}</span><span class="word-option-note">${pts}</span>`;
+    wordsEl.appendChild(div);
+  });
 
-  /* round lifecycle ------------------------------------------------------- */
+  // Show which player we are
+  document.getElementById('card-screen-title').textContent = Local.myName + "'s Card";
 
-  const startRound = () => {
-    const shuffled = [...DECK].sort(() => Math.random() - 0.5);
-    setCards([shuffled[0], shuffled[1]]);
-    setDifficulty(null);
-    setAttempts([]);
-    setPendingP1(null);
-    setResult(null);
-    go("player1Card");
+  // If both players have already pressed ready (reconnect scenario), skip
+  const myReadyField = Local.playerRole === 'p1' ? 'player1_ready' : 'player2_ready';
+  if (room[myReadyField]) {
+    // Already marked ready — show waiting state
+    const otherName = Local.playerRole === 'p1' ? room.player2_name : room.player1_name;
+    document.getElementById('card-ready-status').style.display = '';
+    document.getElementById('card-waiting-name').textContent = otherName || 'your partner';
+    document.getElementById('btn-card-ready').disabled = true;
+    document.getElementById('btn-card-ready').textContent = 'Waiting…';
+  } else {
+    document.getElementById('card-ready-status').style.display = 'none';
+    document.getElementById('btn-card-ready').disabled = false;
+    document.getElementById('btn-card-ready').textContent = "I've seen my card →";
+  }
+
+  UI.showScreen('screen-card');
+}
+
+// ============================================================
+// MARK CARD READY
+// Each player presses this independently.
+// When both are ready, P1's client advances status.
+// ============================================================
+async function markCardReady() {
+  const btn = document.getElementById('btn-card-ready');
+  btn.disabled = true;
+  btn.textContent = 'Waiting…';
+
+  const readyField = Local.playerRole === 'p1' ? 'player1_ready' : 'player2_ready';
+
+  const { data: room, error } = await db
+    .from('convergence_rooms')
+    .update({ [readyField]: true, updated_at: new Date().toISOString() })
+    .eq('id', Local.roomId)
+    .select()
+    .single();
+
+  if (error) { console.error(error); return; }
+
+  // Show waiting state while other player catches up
+  const otherName = Local.playerRole === 'p1' ? room.player2_name : room.player1_name;
+  document.getElementById('card-ready-status').style.display = '';
+  document.getElementById('card-waiting-name').textContent = otherName || 'your partner';
+
+  // If BOTH are now ready, advance to difficulty_selection
+  // Use P1 as the "tiebreaker" writer to avoid double-write
+  if (room.player1_ready && room.player2_ready) {
+    if (Local.playerRole === 'p1') {
+      await db
+        .from('convergence_rooms')
+        .update({ status: 'difficulty_selection', updated_at: new Date().toISOString() })
+        .eq('id', Local.roomId);
+    }
+    // P2's realtime listener will pick up the status change
+  }
+}
+
+// ============================================================
+// DIFFICULTY SCREEN
+// ============================================================
+function renderDifficultyScreen(room) {
+  // P1 sees controls. P2 sees waiting.
+  if (Local.playerRole === 'p1') {
+    document.getElementById('diff-selectors').style.display = '';
+    document.getElementById('diff-waiting').style.display   = 'none';
+    // If a diff was already selected (reconnect), re-highlight it
+    if (room.selected_difficulty) {
+      selectDiff(room.selected_difficulty, true);
+    }
+  } else {
+    document.getElementById('diff-selectors').style.display = 'none';
+    document.getElementById('diff-waiting').style.display   = '';
+  }
+  UI.showScreen('screen-difficulty');
+}
+
+function selectDiff(d, silent) {
+  Local.selectedDiff = d;
+  ['easy', 'medium', 'hard'].forEach(dd =>
+    document.getElementById('diff-' + dd).classList.toggle('selected', dd === d)
+  );
+  const btn = document.getElementById('btn-start-round');
+  btn.disabled = false;
+  btn.style.opacity = '1';
+}
+
+async function confirmDifficulty() {
+  if (!Local.selectedDiff) return;
+
+  const btn = document.getElementById('btn-start-round');
+  btn.disabled = true;
+
+  // Fetch room to get cards
+  const { data: room } = await db
+    .from('convergence_rooms')
+    .select('*')
+    .eq('id', Local.roomId)
+    .single();
+
+  const diff = Local.selectedDiff;
+  const pts  = { easy: 3, medium: 2, hard: 1 }[diff];
+  const wordA = room.player1_card[diff];
+  const wordB = room.player2_card[diff];
+
+  await db
+    .from('convergence_rooms')
+    .update({
+      selected_difficulty: diff,
+      diff_pts:            pts,
+      current_word_a:      wordA,
+      current_word_b:      wordB,
+      initial_word_a:      wordA,
+      initial_word_b:      wordB,
+      attempt_number:      0,
+      status:              'playing',
+      updated_at:          new Date().toISOString(),
+    })
+    .eq('id', Local.roomId);
+  // Realtime will push the update to both clients
+}
+
+// ============================================================
+// PLAYING SCREEN
+// ============================================================
+function renderPlayingScreen(room) {
+  Local.hasSubmitted = false;
+  Local.submitting   = false;
+
+  const attemptNum = (room.attempt_number || 0) + 1;
+  document.getElementById('playing-attempt-label').textContent = 'Attempt ' + attemptNum;
+  document.getElementById('playing-title').textContent = Local.myName;
+  document.getElementById('playing-word-a').textContent = (room.current_word_a || '').toUpperCase();
+  document.getElementById('playing-word-b').textContent = (room.current_word_b || '').toUpperCase();
+
+  // Check if I already submitted (reconnect scenario)
+  const mySubField = Local.playerRole === 'p1' ? 'player1_submission' : 'player2_submission';
+  const mySub = room[mySubField];
+
+  if (mySub) {
+    // Already submitted — show submitted state
+    showSubmittedState(mySub, room);
+  } else {
+    // Show input
+    document.getElementById('playing-input-area').style.display = '';
+    document.getElementById('playing-submitted').style.display  = 'none';
+    document.getElementById('btn-submit-word').style.display    = '';
+    document.getElementById('btn-submit-word').disabled         = false;
+    document.getElementById('playing-input').value              = '';
+    document.getElementById('playing-input').focus();
+    UI.clearError('playing-error');
+  }
+
+  UI.showScreen('screen-playing');
+}
+
+function showSubmittedState(myWord, room) {
+  document.getElementById('playing-input-area').style.display = 'none';
+  document.getElementById('playing-submitted').style.display  = '';
+  document.getElementById('btn-submit-word').style.display    = 'none';
+  document.getElementById('playing-my-word-display').textContent = myWord.toUpperCase();
+
+  const otherName = Local.playerRole === 'p1' ? room.player2_name : room.player1_name;
+  document.getElementById('playing-waiting-name').textContent = otherName || 'your partner';
+  Local.hasSubmitted = true;
+}
+
+async function submitWord() {
+  if (Local.hasSubmitted || Local.submitting) return;
+
+  const input = document.getElementById('playing-input');
+  const val   = input.value.trim();
+
+  UI.clearError('playing-error');
+
+  if (!val) {
+    UI.setError('playing-error', 'Please enter a word.');
+    return;
+  }
+  if (val.includes(' ')) {
+    UI.setError('playing-error', 'One word only — no spaces please.');
+    return;
+  }
+
+  Local.submitting = true;
+  document.getElementById('btn-submit-word').disabled = true;
+  input.value = '';  // Clear immediately so opponent can't see it if they grab the phone
+
+  const subField = Local.playerRole === 'p1' ? 'player1_submission' : 'player2_submission';
+
+  // Write my submission
+  const { data: room, error } = await db
+    .from('convergence_rooms')
+    .update({ [subField]: val, updated_at: new Date().toISOString() })
+    .eq('id', Local.roomId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error(error);
+    UI.setError('playing-error', 'Could not submit. Please try again.');
+    Local.submitting = false;
+    document.getElementById('btn-submit-word').disabled = false;
+    return;
+  }
+
+  Local.hasSubmitted = true;
+  showSubmittedState(val, room);
+
+  // If BOTH have now submitted, advance to reveal
+  // Use P1 as the canonical writer to prevent race conditions
+  if (room.player1_submission && room.player2_submission) {
+    if (Local.playerRole === 'p1') {
+      await advanceToReveal(room);
+    }
+    // P2's realtime listener will get the reveal update automatically
+  }
+
+  Local.submitting = false;
+}
+
+// ============================================================
+// ADVANCE TO REVEAL
+// Called only by P1 once both submissions exist.
+// Computes match, updates history, sets status to 'reveal'.
+// ============================================================
+async function advanceToReveal(room) {
+  const sub1 = normalize(room.player1_submission);
+  const sub2 = normalize(room.player2_submission);
+  const matched = sub1 === sub2;
+
+  const attemptNum = (room.attempt_number || 0) + 1;
+
+  // Build history entry
+  const historyEntry = {
+    attemptNum,
+    pairA:   room.current_word_a,
+    pairB:   room.current_word_b,
+    p1Word:  room.player1_submission,
+    p2Word:  room.player2_submission,
+    matched,
+  };
+  const history = [...(room.history || []), historyEntry];
+
+  let update = {
+    status:         'reveal',
+    attempt_number: attemptNum,
+    history,
+    updated_at:     new Date().toISOString(),
   };
 
-  const chooseDifficulty = (d) => {
-    setDifficulty(d);
-    setInitialWords([cards[0][d], cards[1][d]]);
-    go("initialCountdown");
+  if (matched) {
+    const score = room.diff_pts * attemptNum;
+    update.converged        = true;
+    update.convergence_word = room.player1_submission;
+    update.final_score      = score;
+    update.score_level      = scoreLevel(score);
+  }
+
+  await db
+    .from('convergence_rooms')
+    .update(update)
+    .eq('id', Local.roomId);
+}
+
+// ============================================================
+// REVEAL SCREEN
+// ============================================================
+function renderRevealScreen(room) {
+  const history = room.history || [];
+  const lastAttempt = history[history.length - 1];
+  if (!lastAttempt) return;
+
+  document.getElementById('reveal-attempt-num').textContent = lastAttempt.attemptNum;
+  document.getElementById('reveal-name-p1').textContent = room.player1_name;
+  document.getElementById('reveal-name-p2').textContent = room.player2_name;
+  document.getElementById('reveal-word-p1').textContent = (lastAttempt.p1Word || '').toUpperCase();
+  document.getElementById('reveal-word-p2').textContent = (lastAttempt.p2Word || '').toUpperCase();
+
+  const matched = lastAttempt.matched;
+  document.getElementById('reveal-box-p1').classList.toggle('match', matched);
+  document.getElementById('reveal-box-p2').classList.toggle('match', matched);
+
+  // Result banner
+  const resultEl = document.getElementById('reveal-result');
+  if (matched) {
+    resultEl.innerHTML = `
+      <div class="convergence-banner">
+        <div class="cb-icon">🎉</div>
+        <div class="cb-title">Convergence!</div>
+        <div class="cb-word">${(lastAttempt.p1Word || '').toUpperCase()}</div>
+        <div class="cb-sub">Both players chose the same word!</div>
+      </div>`;
+  } else {
+    resultEl.innerHTML = `
+      <div class="no-match-banner">
+        <p>Not a match. <strong>${(lastAttempt.p1Word || '').toUpperCase()}</strong> and
+        <strong>${(lastAttempt.p2Word || '').toUpperCase()}</strong> are now your new active pair.</p>
+      </div>`;
+  }
+
+  // History list
+  const histEl = document.getElementById('reveal-history-list');
+  histEl.innerHTML = '';
+  // Starting pair row
+  const startRow = document.createElement('div');
+  startRow.className = 'attempt-row';
+  startRow.innerHTML = `<div class="attempt-row-header"><span class="attempt-num">Starting Pair</span></div>
+    <div class="attempt-words">
+      <span class="attempt-word">${(room.initial_word_a || '').toUpperCase()}</span>
+      <span class="attempt-vs">+</span>
+      <span class="attempt-word">${(room.initial_word_b || '').toUpperCase()}</span>
+    </div>`;
+  histEl.appendChild(startRow);
+
+  history.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'attempt-row' + (a.matched ? ' converged' : '');
+    row.innerHTML = `
+      <div class="attempt-row-header">
+        <span class="attempt-num">Attempt ${a.attemptNum}</span>
+        ${a.matched ? '<span class="badge badge-teal">✓ Converged</span>' : ''}
+      </div>
+      <div class="attempt-words">
+        <span class="attempt-word${a.matched ? ' same' : ''}">${(a.p1Word || '').toUpperCase()}</span>
+        <span class="attempt-vs">vs</span>
+        <span class="attempt-word${a.matched ? ' same' : ''}">${(a.p2Word || '').toUpperCase()}</span>
+      </div>`;
+    histEl.appendChild(row);
+  });
+
+  // Actions
+  // IMPORTANT: Only Player 1 advances to the next attempt.
+  // This prevents both players clicking at the same time and creating duplicate rows.
+  const actionsEl = document.getElementById('reveal-actions');
+  if (matched) {
+    // Both players see "See Results" — it's safe because results are read-only
+    actionsEl.innerHTML = `<button class="btn btn-primary" onclick="renderResultsScreen(null, true)">See Results →</button>`;
+  } else if (Local.playerRole === 'p1') {
+    actionsEl.innerHTML = `<button class="btn btn-primary" id="btn-next-attempt" onclick="nextAttempt(this)">Next Attempt →</button>`;
+  } else {
+    actionsEl.innerHTML = `
+      <div class="waiting-box pulsing">
+        <div class="wb-text">Waiting for ${room.player1_name} to continue…</div>
+      </div>`;
+  }
+
+  UI.showScreen('screen-reveal');
+}
+
+// ============================================================
+// NEXT ATTEMPT (P1 only)
+// Clears submissions, sets new active pair, back to 'playing'
+// ============================================================
+async function nextAttempt(btn) {
+  if (btn) btn.disabled = true;  // prevent double-click
+
+  // Get fresh room state to grab last submissions
+  const { data: room } = await db
+    .from('convergence_rooms')
+    .select('*')
+    .eq('id', Local.roomId)
+    .single();
+
+  const lastAttempt = (room.history || []).slice(-1)[0];
+  if (!lastAttempt) return;
+
+  await db
+    .from('convergence_rooms')
+    .update({
+      status:              'playing',
+      current_word_a:      lastAttempt.p1Word,
+      current_word_b:      lastAttempt.p2Word,
+      player1_submission:  null,
+      player2_submission:  null,
+      updated_at:          new Date().toISOString(),
+    })
+    .eq('id', Local.roomId);
+  // Realtime pushes to both players
+}
+
+// ============================================================
+// RESULTS SCREEN
+// Called either via realtime (finished status) or directly
+// when both players click "See Results" on the converged reveal.
+// ============================================================
+async function renderResultsScreen(room, fromReveal) {
+  // If called from the reveal button, fetch fresh room data
+  if (fromReveal || !room) {
+    const { data } = await db
+      .from('convergence_rooms')
+      .select('*')
+      .eq('id', Local.roomId)
+      .single();
+    room = data;
+
+    // P1 updates status to finished so P2 also gets the realtime push
+    if (Local.playerRole === 'p1' && room && room.status !== 'finished') {
+      await db
+        .from('convergence_rooms')
+        .update({ status: 'finished', updated_at: new Date().toISOString() })
+        .eq('id', Local.roomId);
+    }
+  }
+
+  if (!room) return;
+
+  const score = room.final_score || 0;
+  const level = room.score_level || scoreLevel(score);
+
+  document.getElementById('res-level').textContent   = level;
+  document.getElementById('res-score').textContent   = score;
+  document.getElementById('res-attempts').textContent = room.attempt_number || 0;
+  document.getElementById('res-diff').textContent    = capitalize(room.selected_difficulty || '');
+  document.getElementById('res-base').textContent    = (room.diff_pts || 0) + '/attempt';
+  document.getElementById('res-conv-word').textContent = (room.convergence_word || '').toUpperCase();
+  document.getElementById('res-players').textContent  = `${room.player1_name} & ${room.player2_name}`;
+
+  // Word path
+  const pathEl = document.getElementById('res-word-path');
+  pathEl.innerHTML = '';
+  const addW = (w, cls) => {
+    const s = document.createElement('span');
+    s.className = 'word-path-word ' + (cls || '');
+    s.textContent = (w || '').toUpperCase();
+    pathEl.appendChild(s);
   };
-
-  const finishRound = (finalAttempts, word) => {
-    const score = BASE_SCORE[difficulty] * finalAttempts.length;
-    const res = {
-      difficulty,
-      attempts: finalAttempts.length,
-      score,
-      word,
-      initialWords,
-      path: finalAttempts,
-      instant: finalAttempts.length === 0,
-    };
-    setResult(res);
-    const record = {
-      round: history.length + 1,
-      players: [...players],
-      difficulty,
-      attempts: finalAttempts.length,
-      score,
-      level: levelFor(score).title,
-      word,
-      date: new Date().toISOString(),
-    };
-    const next = [record, ...history];
-    setHistory(next);
-    saveHistory(next);
-    go("results");
+  const addA = () => {
+    const s = document.createElement('span');
+    s.className = 'word-path-arrow';
+    s.textContent = '→';
+    pathEl.appendChild(s);
   };
+  addW(room.initial_word_a, 'start');
+  addA();
+  addW(room.initial_word_b, 'start');
+  (room.history || []).forEach(a => {
+    addA();
+    if (a.matched) {
+      addW(a.p1Word, 'end');
+    } else {
+      addW(a.p1Word); addA(); addW(a.p2Word);
+    }
+  });
 
-  const lockP1 = (w) => { setPendingP1(w); go("attemptEntryP2"); };
+  // Save to local history
+  saveLocalRound({
+    convergenceWord: room.convergence_word,
+    p1: room.player1_name,
+    p2: room.player2_name,
+    difficulty: room.selected_difficulty,
+    attempts: room.attempt_number,
+    score,
+    level,
+  });
 
-  const lockP2 = (w) => {
-    const attempt = { p1: pendingP1, p2: w, match: norm(pendingP1) === norm(w) };
-    setAttempts((prev) => [...prev, attempt]);
-    setPendingP1(null);
-    go("attemptReveal");
-  };
+  UI.showScreen('screen-results');
+}
 
-  const markAsMatch = () => {
-    const updated = attempts.map((a, i) => (i === attempts.length - 1 ? { ...a, match: true } : a));
-    setAttempts(updated);
-    finishRound(updated, updated[updated.length - 1].p1);
-  };
+// ============================================================
+// LEAVE / RESET
+// ============================================================
+function leaveRoom() {
+  if (Local.realtimeSub) {
+    db.removeChannel(Local.realtimeSub);
+    Local.realtimeSub = null;
+  }
+  Local.roomId     = null;
+  Local.roomCode   = null;
+  Local.playerRole = null;
+  UI.showScreen('screen-home');
+}
 
-  const nextAttempt = () => go("attemptEntryP1");
+function startNewRoom() {
+  leaveRoom();
+  UI.showScreen('screen-create');
+}
 
-  /* derived --------------------------------------------------------------- */
+// ============================================================
+// LOCAL SCORE HISTORY
+// ============================================================
+function showLocalHistory() {
+  const rounds = getLocalRounds();
+  const el = document.getElementById('history-list');
+  el.innerHTML = '';
+  const clearBtn = document.getElementById('btn-clear-history');
 
-  const lastAttempt = attempts[attempts.length - 1];
-  const currentWords = lastAttempt ? [lastAttempt.p1, lastAttempt.p2] : initialWords;
-  const initialIsMatch = initialWords[0] && norm(initialWords[0]) === norm(initialWords[1]);
-
-  /* screens ---------------------------------------------------------------- */
-
-  const screens = {
-    home: (
-      <div className="cv-hero">
-        <VennLogo size={120} />
-        <div className="cv-eyebrow">A word association game for two minds</div>
-        <h1>Convergence</h1>
-        <p className="cv-sub">Can you and your partner think your way to the same word?</p>
-        <div className="cv-stack" style={{ maxWidth: 320, margin: "0 auto" }}>
-          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => go("playerSetup")}>Start game</button>
-          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => setShowRules(true)}>How to play</button>
-          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => go("exampleRound")}>View example round</button>
-        </div>
-      </div>
-    ),
-
-    playerSetup: (
-      <div className="cv-panel cv-stack">
-        <div className="cv-eyebrow">Who's playing?</div>
-        <h2>Name your duo</h2>
-        {[0, 1].map((i) => (
-          <input key={i} className="cv-input cv-input-sm" value={players[i]}
-            maxLength={20}
-            aria-label={`Player ${i + 1} name`}
-            onChange={(e) => {
-              const next = [...players];
-              next[i] = e.target.value;
-              setPlayers(next);
-            }}
-            onBlur={() => {
-              if (!players[i].trim()) {
-                const next = [...players];
-                next[i] = `Player ${i + 1}`;
-                setPlayers(next);
-              }
-            }} />
-        ))}
-        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={startRound}>Start round 🃏</button>
-      </div>
-    ),
-
-    player1Card: (
-      <SecretCardScreen key="p1" playerName={players[0]} card={cards[0]}
-        flipped={cardFlipped} setFlipped={setCardFlipped}
-        onDone={() => go("player2Card")} />
-    ),
-
-    player2Card: (
-      <SecretCardScreen key="p2" playerName={players[1]} card={cards[1]}
-        flipped={cardFlipped} setFlipped={setCardFlipped}
-        onDone={() => go("difficultySelect")} />
-    ),
-
-    difficultySelect: (
-      <div className="cv-panel cv-stack">
-        <div className="cv-eyebrow">Together now</div>
-        <h2>Choose a difficulty for this round</h2>
-        <div className="cv-banner">🤫 Do not say any actual words from your card during this discussion.</div>
-        <div className="cv-diff">
-          {["easy", "medium", "hard"].map((d) => (
-            <button key={d} className="cv-diffbtn" onClick={() => chooseDifficulty(d)}>
-              <span className="nm">{DIFFICULTY_LABEL[d]}</span>
-              <span className="pts">{BASE_SCORE[d]} pts × attempt</span>
-            </button>
-          ))}
-        </div>
-        <p className="cv-micro cv-center">Lower scores are better — harder words score fewer points per attempt.</p>
-      </div>
-    ),
-
-    initialCountdown: <InitialCountdownScreen
-      players={players}
-      initialWords={initialWords}
-      isMatch={initialIsMatch}
-      onContinue={() => go("attemptEntryP1")}
-      onInstant={() => finishRound([], initialWords[0])}
-    />,
-
-    attemptEntryP1: (
-      <PlayerWordEntry key={`p1-${attempts.length}`} playerName={players[0]}
-        currentWords={currentWords} attemptNo={attempts.length + 1}
-        timerKey={attempts.length} onLock={lockP1} />
-    ),
-
-    attemptEntryP2: (
-      <PlayerWordEntry key={`p2-${attempts.length}`} playerName={players[1]}
-        currentWords={currentWords} attemptNo={attempts.length + 1}
-        timerKey={attempts.length} onLock={lockP2} />
-    ),
-
-    attemptReveal: lastAttempt && (
-      <div className="cv-panel cv-stack cv-center">
-        <div className="cv-eyebrow">Attempt {attempts.length} · Did you converge?</div>
-        <div className="cv-words">
-          <span className="cv-chip cv-anim-l">
-            <span className="cv-chip-owner">{players[0]}</span>{lastAttempt.p1}
-          </span>
-          <span className="cv-plus cv-anim-pop">{lastAttempt.match ? "=" : "+"}</span>
-          <span className="cv-chip is-yellow cv-anim-r">
-            <span className="cv-chip-owner">{players[1]}</span>{lastAttempt.p2}
-          </span>
-        </div>
-        {lastAttempt.match ? (
-          <>
-            <h2 className="cv-anim-pop">Nice — you found the same word! 🎉</h2>
-            <button className="cv-btn cv-btn-primary cv-btn-block"
-              onClick={() => finishRound(attempts, lastAttempt.p1)}>
-              See your score
-            </button>
-          </>
-        ) : (
-          <>
-            <h2>No match. Think of a new connection.</h2>
-            <p className="cv-micro">Your new current words are the two above.</p>
-            <button className="cv-btn cv-btn-yellow cv-btn-block" onClick={nextAttempt}>
-              Next attempt →
-            </button>
-            <button className="cv-btn cv-btn-quiet" onClick={markAsMatch}>
-              Mark as match (typo / plural / close enough)
-            </button>
-          </>
-        )}
-        <hr className="cv-divider" />
-        <AttemptHistory initialWords={initialWords} attempts={attempts} players={players} />
-      </div>
-    ),
-
-    results: result && (
-      <div className="cv-panel cv-stack">
-        <div className="cv-center">
-          <VennLogo size={70} />
-          <div className="cv-eyebrow">{result.instant ? "Instant convergence!" : "Convergence achieved!"}</div>
-          <h2>{players[0]} & {players[1]} converged on "{result.word}"</h2>
-        </div>
-        <ScoreResult result={result} players={players} />
-        <div className="cv-stack" style={{ marginTop: 8 }}>
-          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={startRound}>Play another round</button>
-          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => go("history")}>View score history</button>
-          <button className="cv-btn cv-btn-quiet cv-btn-block" onClick={() => go("home")}>Back to home</button>
-        </div>
-      </div>
-    ),
-
-    history: (
-      <div className="cv-stack">
+  if (!rounds.length) {
+    el.innerHTML = '<p class="text-center text-muted" style="margin-top:24px">No completed rounds yet!</p>';
+    clearBtn.style.display = 'none';
+  } else {
+    clearBtn.style.display = '';
+    [...rounds].reverse().forEach(r => {
+      const card = document.createElement('div');
+      card.className = 'history-round-card';
+      card.innerHTML = `
         <div>
-          <div className="cv-eyebrow">Your duo's record</div>
-          <h2>Score history</h2>
+          <div class="history-round-num">Round ${r.roundNum}</div>
+          <div style="font-size:0.7rem;color:var(--text-light);margin-top:2px">${r.date || ''}</div>
         </div>
-        <ScoreHistory history={history} onClear={() => { setHistory([]); storage.remove(HISTORY_KEY); }} />
-        <button className="cv-btn cv-btn-primary" onClick={() => go("home")}>Back to home</button>
-      </div>
-    ),
-
-    exampleRound: <ExampleRound onBack={() => go("home")} />,
-  };
-
-  return (
-    <div className="cv-root">
-      <style>{CSS}</style>
-      <div className="cv-shell">
-        {phase !== "home" && <TopBar go={go} />}
-        {screens[phase]}
-      </div>
-      {showRules && <HowToPlayModal onClose={() => setShowRules(false)} />}
-    </div>
-  );
-}
-
-/* ------------------------- secret card draw screen ------------------------ */
-
-function SecretCardScreen({ playerName, card, flipped, setFlipped, onDone }) {
-  const [confirmed, setConfirmed] = useState(false);
-  if (!card) return null;
-
-  if (!confirmed) {
-    return (
-      <div className="cv-panel cv-center cv-stack">
-        <div className="cv-eyebrow">Pass the device 📲</div>
-        <h2>{playerName}, view your card.</h2>
-        <p className="cv-sub">Keep it secret!</p>
-        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setConfirmed(true)}>
-          I'm {playerName} — continue
-        </button>
-      </div>
-    );
+        <div class="history-round-info">
+          <div class="history-round-word">${(r.convergenceWord || '').toUpperCase()}</div>
+          <div class="history-round-meta">${r.p1} & ${r.p2} · ${capitalize(r.difficulty)} · ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}</div>
+          <div style="font-size:0.75rem;color:var(--teal-dark);margin-top:2px">${r.level}</div>
+        </div>
+        <div>
+          <div class="history-round-score">${r.score}</div>
+          <div class="history-round-score-lbl">pts</div>
+        </div>`;
+      el.appendChild(card);
+    });
   }
 
-  return (
-    <div className="cv-stack cv-center">
-      <div className="cv-eyebrow">{playerName}'s secret card</div>
-      <CardDisplay card={card} flipped={flipped} />
-      {!flipped ? (
-        <button className="cv-btn cv-btn-yellow" onClick={() => setFlipped(true)}>Reveal my card</button>
-      ) : (
-        <>
-          <p className="cv-micro">Memorize all three words — you'll pick a difficulty together next.</p>
-          <button className="cv-btn cv-btn-primary" onClick={() => { setFlipped(false); setTimeout(onDone, 350); }}>
-            Hide card & pass on
-          </button>
-        </>
-      )}
-    </div>
-  );
+  UI.showScreen('screen-history');
 }
 
-/* ----------------------- initial countdown screen ------------------------- */
-
-function InitialCountdownScreen({ players, initialWords, isMatch, onContinue, onInstant }) {
-  const [stage, setStage] = useState("intro"); // intro → counting → revealed
-
-  return (
-    <div className="cv-panel cv-stack cv-center">
-      <div className="cv-eyebrow">Initial countdown</div>
-
-      {stage === "intro" && (
-        <>
-          <h2>Ready to reveal your starting words?</h2>
-          <p className="cv-sub">This reveals your starting words. It does <strong>not</strong> count as an attempt.</p>
-          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setStage("counting")}>
-            Start countdown
-          </button>
-        </>
-      )}
-
-      {stage === "counting" && <Countdown onDone={() => setStage("revealed")} />}
-
-      {stage === "revealed" && (
-        <>
-          <h2>Your starting words</h2>
-          <div className="cv-words">
-            <span className="cv-chip cv-anim-l">
-              <span className="cv-chip-owner">{players[0]}</span>{initialWords[0]}
-            </span>
-            <span className="cv-plus cv-anim-pop">{isMatch ? "=" : "+"}</span>
-            <span className="cv-chip is-yellow cv-anim-r">
-              <span className="cv-chip-owner">{players[1]}</span>{initialWords[1]}
-            </span>
-          </div>
-          {isMatch ? (
-            <>
-              <h2 className="cv-anim-pop">Whoa — instant convergence! 🤯</h2>
-              <p className="cv-sub">Same starting word, zero attempts. That's as good as it gets.</p>
-              <button className="cv-btn cv-btn-primary cv-btn-block" onClick={onInstant}>See your score</button>
-            </>
-          ) : (
-            <>
-              <p className="cv-sub">Think of the connection. You've got 30 seconds per attempt.</p>
-              <button className="cv-btn cv-btn-yellow cv-btn-block" onClick={onContinue}>Start attempt 1 →</button>
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
+function clearLocalHistory() {
+  if (confirm('Clear all score history?')) {
+    localStorage.removeItem('cvg_history');
+    showLocalHistory();
+  }
 }
 
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const active = document.querySelector('.screen.active');
+  if (!active) return;
+  if (active.id === 'screen-playing')  submitWord();
+  if (active.id === 'screen-create')   createRoom();
+  if (active.id === 'screen-join')     joinRoom();
+});
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+// ============================================================
+// INIT
+// ============================================================
+Local.playerId = getLocalPlayerId();
+checkJoinParam();
+</script>
 </body>
 </html>
