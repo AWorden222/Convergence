@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d9488" />
+  <title>Convergence — think your way to the same word</title>
+  <meta name="description" content="A family word association game: can you and your partner think your way to the same word?" />
+  <!--
+    CONVERGENCE - pass-and-play prototype (single-file demo build)
+    Host on GitHub Pages: put this file at the repo root as index.html,
+    then Settings -> Pages -> Deploy from branch -> main / root.
+    Uses React via CDN + in-browser Babel: fine for a demo, swap to a
+    real build (Vite) when this becomes a product.
+  -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+
+/* ---------------------------------- data --------------------------------- */
+
+const DECK = [
+  { id: 1, easy: "Dog", medium: "Leash", hard: "Obedience" },
+  { id: 2, easy: "Car", medium: "Highway", hard: "Gridlock" },
+  { id: 3, easy: "Tree", medium: "Forest", hard: "Canopy" },
+  { id: 4, easy: "Apple", medium: "Orchard", hard: "Photosynthesis" },
+  { id: 5, easy: "Ball", medium: "Bounce", hard: "Trajectory" },
+  { id: 6, easy: "Ocean", medium: "Wave", hard: "Current" },
+  { id: 7, easy: "Sun", medium: "Solar", hard: "Fusion" },
+  { id: 8, easy: "House", medium: "Roof", hard: "Insulation" },
+  { id: 9, easy: "Train", medium: "Tracks", hard: "Locomotive" },
+  { id: 10, easy: "Chair", medium: "Furniture", hard: "Upholstery" },
+  { id: 11, easy: "Book", medium: "Library", hard: "Bibliophile" },
+  { id: 12, easy: "Cat", medium: "Whiskers", hard: "Nocturnal" },
+  { id: 13, easy: "Rain", medium: "Umbrella", hard: "Precipitation" },
+  { id: 14, easy: "Bread", medium: "Toast", hard: "Fermentation" },
+  { id: 15, easy: "Plane", medium: "Airport", hard: "Turbulence" },
+  { id: 16, easy: "Star", medium: "Constellation", hard: "Supernova" },
+  { id: 17, easy: "Ice", medium: "Glacier", hard: "Permafrost" },
+  { id: 18, easy: "Fish", medium: "Aquarium", hard: "Biodiversity" },
+  { id: 19, easy: "Camera", medium: "Lens", hard: "Aperture" },
+  { id: 20, easy: "Mountain", medium: "Summit", hard: "Altitude" },
+  { id: 21, easy: "Cake", medium: "Frosting", hard: "Celebration" },
+  { id: 22, easy: "Fish", medium: "River", hard: "Ecosystem" },
+  { id: 23, easy: "Table", medium: "Wood", hard: "Carpenter" },
+  { id: 24, easy: "Phone", medium: "Text", hard: "Notification" },
+  { id: 25, easy: "Moon", medium: "Crater", hard: "Lunar Eclipse" },
+  { id: 26, easy: "Flower", medium: "Petal", hard: "Pollination" },
+  { id: 27, easy: "Beach", medium: "Sandcastle", hard: "Erosion" },
+  { id: 28, easy: "Light", medium: "Bulb", hard: "Incandescence" },
+  { id: 29, easy: "Spider", medium: "Web", hard: "Arachnid" },
+  { id: 30, easy: "Shirt", medium: "Fabric", hard: "Tailor" },
+  { id: 31, easy: "Tree", medium: "Shade", hard: "Photosynthesis" },
+  { id: 32, easy: "Dog", medium: "Collar", hard: "Domestication" },
+  { id: 33, easy: "Clock", medium: "Minute", hard: "Chronology" },
+  { id: 34, easy: "Movie", medium: "Popcorn", hard: "Cinematography" },
+  { id: 35, easy: "Ice", medium: "Freezer", hard: "Frostbite" },
+  { id: 36, easy: "Bridge", medium: "River", hard: "Engineering" },
+  { id: 37, easy: "Fire", medium: "Smoke", hard: "Combustion" },
+  { id: 38, easy: "Music", medium: "Rhythm", hard: "Syncopation" },
+  { id: 39, easy: "Door", medium: "Key", hard: "Security" },
+  { id: 40, easy: "Garden", medium: "Soil", hard: "Cultivation" },
+];
+
+const BASE_SCORE = { easy: 3, medium: 2, hard: 1 };
+const DIFFICULTY_LABEL = { easy: "Easy", medium: "Medium", hard: "Hard" };
+
+const LEVELS = [
+  { max: 3, title: "Perfect Sync", desc: "Your minds matched perfectly." },
+  { max: 6, title: "Psychic Link", desc: "Practically telepathic." },
+  { max: 10, title: "In the Zone", desc: "You're on the right wavelength." },
+  { max: 15, title: "Close Callers", desc: "Circling the same idea." },
+  { max: 20, title: "The Think Tank", desc: "Finding solutions together." },
+  { max: 30, title: "Persistence Pays", desc: "Determination gets the win." },
+  { max: Infinity, title: "Lost in Translation", desc: "Got there eventually." },
+];
+
+const levelFor = (score) => LEVELS.find((l) => score <= l.max);
+const norm = (w) => (w || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/* ----------------------- storage (localStorage-safe) ---------------------- */
+
+const storage = (() => {
+  const mem = {};
+  try {
+    const t = "__convergence_test__";
+    window.localStorage.setItem(t, "1");
+    window.localStorage.removeItem(t);
+    return {
+      get: (k) => window.localStorage.getItem(k),
+      set: (k, v) => window.localStorage.setItem(k, v),
+      remove: (k) => window.localStorage.removeItem(k),
+    };
+  } catch {
+    return {
+      get: (k) => (k in mem ? mem[k] : null),
+      set: (k, v) => { mem[k] = v; },
+      remove: (k) => { delete mem[k]; },
+    };
+  }
+})();
+
+const HISTORY_KEY = "convergence_history_v1";
+const loadHistory = () => {
+  try { return JSON.parse(storage.get(HISTORY_KEY)) || []; }
+  catch { return []; }
+};
+const saveHistory = (h) => storage.set(HISTORY_KEY, JSON.stringify(h));
+
+/* --------------------------------- styles -------------------------------- */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,600&display=swap');
+
+:root {
+  --ink: #134e4a;
+  --teal: #0d9488;
+  --teal-deep: #0f766e;
+  --teal-soft: #ccfbf1;
+  --teal-mist: #f0fdfa;
+  --yellow: #fbbf24;
+  --yellow-soft: #fef3c7;
+  --cream: #fffdf7;
+  --white: #ffffff;
+  --rose: #fb7185;
+  --shadow: 0 10px 30px rgba(19, 78, 74, 0.12);
+  --radius: 22px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.cv-root {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(251,191,36,0.16), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(13,148,136,0.12), transparent 60%),
+    var(--cream);
+  color: var(--ink);
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-size: 17px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cv-shell { width: 100%; max-width: 560px; padding: 20px 18px 56px; }
+
+.cv-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 2px 22px;
+}
+.cv-wordmark {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px;
+  letter-spacing: 0.2px; cursor: pointer; background: none; border: none;
+  color: var(--ink);
+}
+.cv-topbar-links { display: flex; gap: 6px; }
+
+h1, h2, h3 { font-family: 'Fredoka', sans-serif; }
+h1 { font-size: clamp(44px, 11vw, 64px); font-weight: 700; line-height: 1.02; letter-spacing: -1px; }
+h2 { font-size: 28px; font-weight: 600; }
+h3 { font-size: 19px; font-weight: 600; }
+
+.cv-eyebrow {
+  font-size: 13px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--teal); margin-bottom: 10px;
+}
+.cv-sub { color: #3f6864; font-size: 18px; line-height: 1.5; }
+.cv-micro { font-size: 14px; color: #5b7f7b; }
+
+.cv-btn {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px;
+  border: none; border-radius: 999px; padding: 15px 28px; cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.cv-btn:active { transform: scale(0.97); }
+.cv-btn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.cv-btn-primary { background: var(--teal); color: var(--white); box-shadow: 0 8px 20px rgba(13,148,136,0.35); }
+.cv-btn-primary:hover { background: var(--teal-deep); }
+.cv-btn-yellow { background: var(--yellow); color: var(--ink); box-shadow: 0 8px 20px rgba(251,191,36,0.35); }
+.cv-btn-yellow:hover { background: #f4b418; }
+.cv-btn-ghost { background: var(--white); color: var(--ink); border: 2px solid #d6ebe8; }
+.cv-btn-ghost:hover { border-color: var(--teal); }
+.cv-btn-quiet { background: none; color: var(--teal-deep); font-size: 15px; padding: 8px 14px; }
+.cv-btn-quiet:hover { background: var(--teal-mist); }
+.cv-btn-block { width: 100%; }
+.cv-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+.cv-stack { display: flex; flex-direction: column; gap: 14px; }
+.cv-panel {
+  background: var(--white); border-radius: var(--radius); padding: 26px 24px;
+  box-shadow: var(--shadow);
+}
+.cv-center { text-align: center; }
+
+/* hero */
+.cv-hero { text-align: center; padding: 30px 0 10px; }
+.cv-hero .cv-logo { margin: 0 auto 22px; }
+.cv-hero p { margin: 14px auto 30px; max-width: 380px; }
+
+/* venn logo */
+.cv-logo { display: block; }
+
+/* playing card */
+.cv-cardflip { perspective: 1200px; width: min(310px, 84vw); margin: 0 auto; }
+.cv-cardflip-inner {
+  position: relative; width: 100%; aspect-ratio: 5/7;
+  transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4, 0.1, 0.2, 1);
+}
+.cv-cardflip.is-flipped .cv-cardflip-inner { transform: rotateY(180deg); }
+.cv-cardface {
+  position: absolute; inset: 0; border-radius: 24px; backface-visibility: hidden;
+  -webkit-backface-visibility: hidden; box-shadow: var(--shadow); overflow: hidden;
+}
+.cv-cardback {
+  background: var(--teal);
+  display: flex; align-items: center; justify-content: center;
+  border: 8px solid var(--white);
+}
+.cv-cardfront {
+  background: var(--white); transform: rotateY(180deg);
+  border: 8px solid var(--white);
+  display: flex; flex-direction: column; justify-content: center; gap: 14px;
+  padding: 26px 22px;
+}
+.cv-cardrow {
+  background: var(--teal-mist); border-radius: 16px; padding: 13px 16px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+}
+.cv-cardrow.is-medium { background: var(--yellow-soft); }
+.cv-cardrow.is-hard { background: #ffe9ec; }
+.cv-cardrow .lbl { font-size: 12px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #5b7f7b; }
+.cv-cardrow .wrd { font-family: 'Fredoka', sans-serif; font-size: 24px; font-weight: 600; }
+
+/* word chips */
+.cv-words { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.cv-chip {
+  background: var(--white); border: 2px solid var(--teal-soft); border-radius: 999px;
+  padding: 10px 20px; font-family: 'Fredoka', sans-serif; font-size: 20px; font-weight: 600;
+  box-shadow: 0 4px 12px rgba(19,78,74,0.08);
+}
+.cv-chip.is-yellow { border-color: var(--yellow-soft); }
+.cv-chip-owner { display: block; font-family: 'Nunito'; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #5b7f7b; }
+.cv-plus { font-family: 'Fredoka', sans-serif; font-size: 22px; color: var(--teal); font-weight: 600; }
+
+/* reveal animation */
+@keyframes slideL { from { opacity: 0; transform: translateX(-60px); } to { opacity: 1; transform: none; } }
+@keyframes slideR { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+.cv-anim-l { animation: slideL 0.5s ease both; }
+.cv-anim-r { animation: slideR 0.5s ease both; }
+.cv-anim-pop { animation: pop 0.5s ease 0.45s both; }
+
+/* big countdown digits */
+.cv-bigcount {
+  font-family: 'Fredoka', sans-serif; font-size: 110px; font-weight: 700; color: var(--teal);
+  line-height: 1; animation: pop 0.4s ease both;
+}
+.cv-bigcount.is-go { font-size: 44px; color: var(--ink); }
+
+/* timer ring */
+.cv-timer { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.cv-timer .num { font-family: 'Fredoka', sans-serif; font-size: 22px; font-weight: 600; min-width: 40px; }
+.cv-timer.is-low .num { color: var(--rose); }
+
+/* inputs */
+.cv-input {
+  width: 100%; font-family: 'Fredoka', sans-serif; font-size: 24px; font-weight: 500;
+  text-align: center; padding: 16px 18px; border-radius: 18px;
+  border: 2px solid #d6ebe8; background: var(--white); color: var(--ink);
+}
+.cv-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 4px rgba(13,148,136,0.15); }
+.cv-input-sm { font-size: 18px; font-family: 'Nunito'; font-weight: 700; text-align: left; }
+
+/* difficulty buttons */
+.cv-diff { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.cv-diffbtn {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--white); border: 2px solid #d6ebe8; border-radius: 18px;
+  padding: 18px 20px; cursor: pointer; font-family: 'Nunito';
+  transition: border-color 0.12s, transform 0.12s;
+  text-align: left;
+}
+.cv-diffbtn:hover { border-color: var(--teal); transform: translateY(-2px); }
+.cv-diffbtn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.cv-diffbtn .nm { font-family: 'Fredoka', sans-serif; font-size: 22px; font-weight: 600; }
+.cv-diffbtn .pts { font-size: 14px; font-weight: 800; color: var(--teal-deep); background: var(--teal-mist); border-radius: 999px; padding: 6px 12px; }
+
+/* attempt history */
+.cv-attempts { display: flex; flex-direction: column; gap: 8px; }
+.cv-attemptrow {
+  display: flex; align-items: center; gap: 10px; font-size: 15px;
+  background: var(--teal-mist); border-radius: 14px; padding: 10px 14px;
+}
+.cv-attemptrow.is-match { background: var(--yellow-soft); }
+.cv-attemptrow .tag {
+  font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--teal-deep); min-width: 70px;
+}
+.cv-attemptrow .pair { font-weight: 700; }
+
+/* results */
+.cv-score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0; }
+.cv-stat { background: var(--teal-mist); border-radius: 16px; padding: 14px; text-align: center; }
+.cv-stat .v { font-family: 'Fredoka', sans-serif; font-size: 28px; font-weight: 600; }
+.cv-stat .k { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #5b7f7b; }
+.cv-levelbadge {
+  background: var(--yellow); border-radius: 18px; padding: 16px 20px; text-align: center;
+  box-shadow: 0 8px 20px rgba(251,191,36,0.35);
+}
+.cv-levelbadge .t { font-family: 'Fredoka', sans-serif; font-size: 26px; font-weight: 700; }
+
+/* history table */
+.cv-hist { display: flex; flex-direction: column; gap: 10px; }
+.cv-histrow {
+  background: var(--white); border-radius: 16px; padding: 14px 16px;
+  box-shadow: 0 4px 14px rgba(19,78,74,0.07);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.cv-histrow .top { display: flex; justify-content: space-between; align-items: baseline; }
+.cv-histrow .rd { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 17px; }
+.cv-histrow .meta { font-size: 14px; color: #5b7f7b; }
+.cv-histrow .lv { font-weight: 800; color: var(--teal-deep); font-size: 14px; }
+
+/* modal */
+.cv-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(19,78,74,0.45); display: flex;
+  align-items: center; justify-content: center; padding: 18px; z-index: 50;
+}
+.cv-modal {
+  background: var(--white); border-radius: var(--radius); max-width: 520px; width: 100%;
+  max-height: 86vh; overflow-y: auto; padding: 28px 26px; box-shadow: var(--shadow);
+  animation: pop 0.3s ease both;
+}
+.cv-modal ol, .cv-modal ul { padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.cv-modal li { line-height: 1.5; }
+
+.cv-divider { border: none; border-top: 2px dashed #d6ebe8; margin: 18px 0; }
+
+.cv-banner {
+  background: var(--yellow-soft); border-radius: 14px; padding: 12px 16px;
+  font-size: 15px; font-weight: 700; text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+`;
+
+/* ------------------------------ small pieces ------------------------------ */
+
+function VennLogo({ size = 56 }) {
+  return (
+    <svg className="cv-logo" width={size} height={size * 0.7} viewBox="0 0 100 70" aria-hidden="true">
+      <circle cx="36" cy="35" r="28" fill="#0d9488" opacity="0.9" />
+      <circle cx="64" cy="35" r="28" fill="#fbbf24" opacity="0.9" />
+      <path d="M50 11.6a28 28 0 0 1 0 46.8 28 28 0 0 1 0-46.8z" fill="#fffdf7" />
+    </svg>
+  );
+}
+
+function TopBar({ go }) {
+  return (
+    <div className="cv-topbar">
+      <button className="cv-wordmark" onClick={() => go("home")} aria-label="Back to home">
+        <VennLogo size={34} /> Convergence
+      </button>
+      <div className="cv-topbar-links">
+        <button className="cv-btn cv-btn-quiet" onClick={() => go("history")}>History</button>
+        <button className="cv-btn cv-btn-quiet" onClick={() => go("howToPlay")}>Rules</button>
+      </div>
+    </div>
+  );
+}
+
+/* 3-2-1 countdown */
+function Countdown({ onDone }) {
+  const [step, setStep] = useState(3);
+  useEffect(() => {
+    if (step === 0) { const t = setTimeout(onDone, 900); return () => clearTimeout(t); }
+    const t = setTimeout(() => setStep((s) => s - 1), 850);
+    return () => clearTimeout(t);
+  }, [step, onDone]);
+  return (
+    <div className="cv-center" style={{ padding: "40px 0" }} aria-live="assertive">
+      {step > 0
+        ? <div className="cv-bigcount" key={step}>{step}</div>
+        : <div className="cv-bigcount is-go" key="go">Say your word!</div>}
+    </div>
+  );
+}
+
+/* 30-second think timer */
+function ThinkTimer({ resetKey }) {
+  const [left, setLeft] = useState(30);
+  useEffect(() => {
+    setLeft(30);
+    const iv = setInterval(() => setLeft((l) => (l > 0 ? l - 1 : 0)), 1000);
+    return () => clearInterval(iv);
+  }, [resetKey]);
+  const pct = left / 30;
+  return (
+    <div className={`cv-timer ${left <= 10 ? "is-low" : ""}`} aria-label={`${left} seconds left to think`}>
+      <svg width="34" height="34" viewBox="0 0 36 36">
+        <circle cx="18" cy="18" r="15" fill="none" stroke="#d6ebe8" strokeWidth="4" />
+        <circle cx="18" cy="18" r="15" fill="none" stroke={left <= 10 ? "#fb7185" : "#0d9488"} strokeWidth="4"
+          strokeDasharray={`${pct * 94.2} 94.2`} strokeLinecap="round" transform="rotate(-90 18 18)"
+          style={{ transition: "stroke-dasharray 1s linear" }} />
+      </svg>
+      <span className="num">{left > 0 ? `${left}s` : "Time!"}</span>
+      <span className="cv-micro">{left > 0 ? "to think of a connection" : "lock in your best word"}</span>
+    </div>
+  );
+}
+
+/* flippable playing card */
+function CardDisplay({ card, flipped, highlight }) {
+  return (
+    <div className={`cv-cardflip ${flipped ? "is-flipped" : ""}`}>
+      <div className="cv-cardflip-inner">
+        <div className="cv-cardface cv-cardback"><VennLogo size={110} /></div>
+        <div className="cv-cardface cv-cardfront">
+          {["easy", "medium", "hard"].map((d) => (
+            <div key={d} className={`cv-cardrow is-${d}`}
+              style={highlight && highlight !== d ? { opacity: 0.35 } : undefined}>
+              <span className="lbl">{DIFFICULTY_LABEL[d]} · {BASE_SCORE[d]} pts</span>
+              <span className="wrd">{card[d]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* private word entry with pass-the-device gate */
+function PlayerWordEntry({ playerName, currentWords, attemptNo, onLock, timerKey }) {
+  const [ready, setReady] = useState(false);
+  const [word, setWord] = useState("");
+  const inputRef = useRef(null);
+  useEffect(() => { if (ready) inputRef.current?.focus(); }, [ready]);
+
+  if (!ready) {
+    return (
+      <div className="cv-panel cv-center cv-stack">
+        <div className="cv-eyebrow">Attempt {attemptNo} · Pass the device</div>
+        <h2>{playerName}'s turn</h2>
+        <p className="cv-sub">No peeking, other player! 👀</p>
+        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setReady(true)}>
+          I'm {playerName} — show me
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="cv-panel cv-stack">
+      <div className="cv-eyebrow cv-center">Attempt {attemptNo} · {playerName}</div>
+      <div className="cv-words">
+        <span className="cv-chip">{currentWords[0]}</span>
+        <span className="cv-plus">+</span>
+        <span className="cv-chip is-yellow">{currentWords[1]}</span>
+      </div>
+      <ThinkTimer resetKey={timerKey} />
+      <p className="cv-micro cv-center">Think of one word that connects these two. Keep it secret!</p>
+      <input
+        ref={inputRef}
+        className="cv-input"
+        value={word}
+        placeholder="Your word…"
+        maxLength={30}
+        onChange={(e) => setWord(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && norm(word)) onLock(word); }}
+        aria-label={`${playerName}, enter your connecting word`}
+      />
+      <button className="cv-btn cv-btn-yellow cv-btn-block" disabled={!norm(word)} onClick={() => onLock(word)}>
+        Lock word 🔒
+      </button>
+    </div>
+  );
+}
+
+/* attempt path list */
+function AttemptHistory({ initialWords, attempts, players }) {
+  return (
+    <div className="cv-attempts">
+      <div className="cv-attemptrow">
+        <span className="tag">Start</span>
+        <span className="pair">{initialWords[0]} + {initialWords[1]}</span>
+      </div>
+      {attempts.map((a, i) => (
+        <div key={i} className={`cv-attemptrow ${a.match ? "is-match" : ""}`}>
+          <span className="tag">{a.match ? "Match!" : `Try ${i + 1}`}</span>
+          <span className="pair">{a.p1} + {a.p2}</span>
+        </div>
+      ))}
+      <p className="cv-micro" style={{ paddingLeft: 4 }}>
+        Left word = {players[0]} · right word = {players[1]}
+      </p>
+    </div>
+  );
+}
+
+/* results summary */
+function ScoreResult({ result, players }) {
+  const lvl = levelFor(result.score);
+  return (
+    <>
+      <div className="cv-score-grid">
+        <div className="cv-stat"><div className="v">{DIFFICULTY_LABEL[result.difficulty]}</div><div className="k">Difficulty</div></div>
+        <div className="cv-stat"><div className="v">{BASE_SCORE[result.difficulty]}</div><div className="k">Base score</div></div>
+        <div className="cv-stat"><div className="v">{result.attempts}</div><div className="k">Attempts</div></div>
+        <div className="cv-stat"><div className="v">{result.score}</div><div className="k">Final score</div></div>
+      </div>
+      <div className="cv-levelbadge">
+        <div className="t">{lvl.title}</div>
+        <div>{lvl.desc}</div>
+      </div>
+      <hr className="cv-divider" />
+      <h3 style={{ marginBottom: 10 }}>Your word path</h3>
+      <AttemptHistory initialWords={result.initialWords} attempts={result.path} players={players} />
+    </>
+  );
+}
+
+/* saved rounds */
+function ScoreHistory({ history, onClear }) {
+  if (history.length === 0) {
+    return (
+      <div className="cv-panel cv-center cv-stack">
+        <h2>No rounds yet</h2>
+        <p className="cv-sub">Play a round and your scores will show up here.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="cv-stack">
+      <div className="cv-hist">
+        {history.map((r) => (
+          <div className="cv-histrow" key={r.round + r.date}>
+            <div className="top">
+              <span className="rd">Round {r.round} — "{r.word}"</span>
+              <span className="lv">{r.level}</span>
+            </div>
+            <span className="meta">
+              {r.players[0]} & {r.players[1]} · {DIFFICULTY_LABEL[r.difficulty]} ·{" "}
+              {r.attempts} attempt{r.attempts === 1 ? "" : "s"} · {r.score} pts
+            </span>
+          </div>
+        ))}
+      </div>
+      <button className="cv-btn cv-btn-ghost" onClick={onClear}>Clear history</button>
+    </div>
+  );
+}
+
+/* how to play modal */
+function HowToPlayModal({ onClose }) {
+  return (
+    <div className="cv-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="How to play">
+      <div className="cv-modal cv-stack" onClick={(e) => e.stopPropagation()}>
+        <h2>How to play</h2>
+        <ol>
+          <li>Each player secretly draws a card with an <strong>Easy</strong>, <strong>Medium</strong>, and <strong>Hard</strong> word.</li>
+          <li>Agree on a difficulty together — but <strong>never say any words from your cards</strong>.</li>
+          <li>The <strong>Initial Countdown</strong> reveals both starting words. It doesn't count as an attempt.</li>
+          <li>Each attempt, you have <strong>30 seconds</strong> to think of one word that connects the two current words. Enter it privately, then reveal together.</li>
+          <li>You win the round when you both say the <strong>exact same word</strong> — that's convergence!</li>
+        </ol>
+        <hr className="cv-divider" />
+        <h3>Scoring (lower is better)</h3>
+        <ul>
+          <li>Easy = 3 pts · Medium = 2 pts · Hard = 1 pt</li>
+          <li><strong>Final score = base score × attempts</strong></li>
+        </ul>
+        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={onClose}>Got it!</button>
+      </div>
+    </div>
+  );
+}
+
+/* scripted example round */
+function ExampleRound({ onBack }) {
+  const steps = [
+    { tag: "Cards", text: "Player 1 draws Tree / Forest / Canopy. Player 2 draws Stream / River / Tributary. Cards stay secret!" },
+    { tag: "Difficulty", text: "Both players agree on Medium (2 points per attempt)." },
+    { tag: "Countdown", text: "Initial Countdown reveals: Forest + River. This doesn't count as an attempt." },
+    { tag: "Attempt 1", text: "Player 1 says Nature, Player 2 says Stream. No match — keep going!" },
+    { tag: "Attempt 2", text: "Player 1 says Waterfall, Player 2 says Trail. So close, but no match." },
+    { tag: "Attempt 3", text: "Both say Hiking. Convergence! 🎉" },
+    { tag: "Score", text: "Medium (2) × 3 attempts = 6 points → Psychic Link: practically telepathic." },
+  ];
+  const [shown, setShown] = useState(1);
+  return (
+    <div className="cv-panel cv-stack">
+      <div className="cv-eyebrow">Example round</div>
+      <h2>Forest meets River</h2>
+      <div className="cv-attempts">
+        {steps.slice(0, shown).map((s, i) => (
+          <div key={i} className={`cv-attemptrow ${s.tag === "Attempt 3" || s.tag === "Score" ? "is-match" : ""}`}>
+            <span className="tag">{s.tag}</span>
+            <span style={{ lineHeight: 1.45 }}>{s.text}</span>
+          </div>
+        ))}
+      </div>
+      {shown < steps.length
+        ? <button className="cv-btn cv-btn-yellow" onClick={() => setShown(shown + 1)}>Next step →</button>
+        : <button className="cv-btn cv-btn-primary" onClick={onBack}>Back to home</button>}
+    </div>
+  );
+}
+
+/* --------------------------------- the app -------------------------------- */
+
+function App() {
+  const [phase, setPhase] = useState("home");
+  const [players, setPlayers] = useState(["Player 1", "Player 2"]);
+  const [cards, setCards] = useState([null, null]);
+  const [cardFlipped, setCardFlipped] = useState(false);
+  const [difficulty, setDifficulty] = useState(null);
+  const [initialWords, setInitialWords] = useState([null, null]);
+  const [attempts, setAttempts] = useState([]);
+  const [pendingP1, setPendingP1] = useState(null);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState(loadHistory);
+  const [showRules, setShowRules] = useState(false);
+
+  const go = useCallback((p) => { setPhase(p); setCardFlipped(false); }, []);
+
+  /* round lifecycle ------------------------------------------------------- */
+
+  const startRound = () => {
+    const shuffled = [...DECK].sort(() => Math.random() - 0.5);
+    setCards([shuffled[0], shuffled[1]]);
+    setDifficulty(null);
+    setAttempts([]);
+    setPendingP1(null);
+    setResult(null);
+    go("player1Card");
+  };
+
+  const chooseDifficulty = (d) => {
+    setDifficulty(d);
+    setInitialWords([cards[0][d], cards[1][d]]);
+    go("initialCountdown");
+  };
+
+  const finishRound = (finalAttempts, word) => {
+    const score = BASE_SCORE[difficulty] * finalAttempts.length;
+    const res = {
+      difficulty,
+      attempts: finalAttempts.length,
+      score,
+      word,
+      initialWords,
+      path: finalAttempts,
+      instant: finalAttempts.length === 0,
+    };
+    setResult(res);
+    const record = {
+      round: history.length + 1,
+      players: [...players],
+      difficulty,
+      attempts: finalAttempts.length,
+      score,
+      level: levelFor(score).title,
+      word,
+      date: new Date().toISOString(),
+    };
+    const next = [record, ...history];
+    setHistory(next);
+    saveHistory(next);
+    go("results");
+  };
+
+  const lockP1 = (w) => { setPendingP1(w); go("attemptEntryP2"); };
+
+  const lockP2 = (w) => {
+    const attempt = { p1: pendingP1, p2: w, match: norm(pendingP1) === norm(w) };
+    setAttempts((prev) => [...prev, attempt]);
+    setPendingP1(null);
+    go("attemptReveal");
+  };
+
+  const markAsMatch = () => {
+    const updated = attempts.map((a, i) => (i === attempts.length - 1 ? { ...a, match: true } : a));
+    setAttempts(updated);
+    finishRound(updated, updated[updated.length - 1].p1);
+  };
+
+  const nextAttempt = () => go("attemptEntryP1");
+
+  /* derived --------------------------------------------------------------- */
+
+  const lastAttempt = attempts[attempts.length - 1];
+  const currentWords = lastAttempt ? [lastAttempt.p1, lastAttempt.p2] : initialWords;
+  const initialIsMatch = initialWords[0] && norm(initialWords[0]) === norm(initialWords[1]);
+
+  /* screens ---------------------------------------------------------------- */
+
+  const screens = {
+    home: (
+      <div className="cv-hero">
+        <VennLogo size={120} />
+        <div className="cv-eyebrow">A word association game for two minds</div>
+        <h1>Convergence</h1>
+        <p className="cv-sub">Can you and your partner think your way to the same word?</p>
+        <div className="cv-stack" style={{ maxWidth: 320, margin: "0 auto" }}>
+          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => go("playerSetup")}>Start game</button>
+          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => setShowRules(true)}>How to play</button>
+          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => go("exampleRound")}>View example round</button>
+        </div>
+      </div>
+    ),
+
+    playerSetup: (
+      <div className="cv-panel cv-stack">
+        <div className="cv-eyebrow">Who's playing?</div>
+        <h2>Name your duo</h2>
+        {[0, 1].map((i) => (
+          <input key={i} className="cv-input cv-input-sm" value={players[i]}
+            maxLength={20}
+            aria-label={`Player ${i + 1} name`}
+            onChange={(e) => {
+              const next = [...players];
+              next[i] = e.target.value;
+              setPlayers(next);
+            }}
+            onBlur={() => {
+              if (!players[i].trim()) {
+                const next = [...players];
+                next[i] = `Player ${i + 1}`;
+                setPlayers(next);
+              }
+            }} />
+        ))}
+        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={startRound}>Start round 🃏</button>
+      </div>
+    ),
+
+    player1Card: (
+      <SecretCardScreen key="p1" playerName={players[0]} card={cards[0]}
+        flipped={cardFlipped} setFlipped={setCardFlipped}
+        onDone={() => go("player2Card")} />
+    ),
+
+    player2Card: (
+      <SecretCardScreen key="p2" playerName={players[1]} card={cards[1]}
+        flipped={cardFlipped} setFlipped={setCardFlipped}
+        onDone={() => go("difficultySelect")} />
+    ),
+
+    difficultySelect: (
+      <div className="cv-panel cv-stack">
+        <div className="cv-eyebrow">Together now</div>
+        <h2>Choose a difficulty for this round</h2>
+        <div className="cv-banner">🤫 Do not say any actual words from your card during this discussion.</div>
+        <div className="cv-diff">
+          {["easy", "medium", "hard"].map((d) => (
+            <button key={d} className="cv-diffbtn" onClick={() => chooseDifficulty(d)}>
+              <span className="nm">{DIFFICULTY_LABEL[d]}</span>
+              <span className="pts">{BASE_SCORE[d]} pts × attempt</span>
+            </button>
+          ))}
+        </div>
+        <p className="cv-micro cv-center">Lower scores are better — harder words score fewer points per attempt.</p>
+      </div>
+    ),
+
+    initialCountdown: <InitialCountdownScreen
+      players={players}
+      initialWords={initialWords}
+      isMatch={initialIsMatch}
+      onContinue={() => go("attemptEntryP1")}
+      onInstant={() => finishRound([], initialWords[0])}
+    />,
+
+    attemptEntryP1: (
+      <PlayerWordEntry key={`p1-${attempts.length}`} playerName={players[0]}
+        currentWords={currentWords} attemptNo={attempts.length + 1}
+        timerKey={attempts.length} onLock={lockP1} />
+    ),
+
+    attemptEntryP2: (
+      <PlayerWordEntry key={`p2-${attempts.length}`} playerName={players[1]}
+        currentWords={currentWords} attemptNo={attempts.length + 1}
+        timerKey={attempts.length} onLock={lockP2} />
+    ),
+
+    attemptReveal: lastAttempt && (
+      <div className="cv-panel cv-stack cv-center">
+        <div className="cv-eyebrow">Attempt {attempts.length} · Did you converge?</div>
+        <div className="cv-words">
+          <span className="cv-chip cv-anim-l">
+            <span className="cv-chip-owner">{players[0]}</span>{lastAttempt.p1}
+          </span>
+          <span className="cv-plus cv-anim-pop">{lastAttempt.match ? "=" : "+"}</span>
+          <span className="cv-chip is-yellow cv-anim-r">
+            <span className="cv-chip-owner">{players[1]}</span>{lastAttempt.p2}
+          </span>
+        </div>
+        {lastAttempt.match ? (
+          <>
+            <h2 className="cv-anim-pop">Nice — you found the same word! 🎉</h2>
+            <button className="cv-btn cv-btn-primary cv-btn-block"
+              onClick={() => finishRound(attempts, lastAttempt.p1)}>
+              See your score
+            </button>
+          </>
+        ) : (
+          <>
+            <h2>No match. Think of a new connection.</h2>
+            <p className="cv-micro">Your new current words are the two above.</p>
+            <button className="cv-btn cv-btn-yellow cv-btn-block" onClick={nextAttempt}>
+              Next attempt →
+            </button>
+            <button className="cv-btn cv-btn-quiet" onClick={markAsMatch}>
+              Mark as match (typo / plural / close enough)
+            </button>
+          </>
+        )}
+        <hr className="cv-divider" />
+        <AttemptHistory initialWords={initialWords} attempts={attempts} players={players} />
+      </div>
+    ),
+
+    results: result && (
+      <div className="cv-panel cv-stack">
+        <div className="cv-center">
+          <VennLogo size={70} />
+          <div className="cv-eyebrow">{result.instant ? "Instant convergence!" : "Convergence achieved!"}</div>
+          <h2>{players[0]} & {players[1]} converged on "{result.word}"</h2>
+        </div>
+        <ScoreResult result={result} players={players} />
+        <div className="cv-stack" style={{ marginTop: 8 }}>
+          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={startRound}>Play another round</button>
+          <button className="cv-btn cv-btn-ghost cv-btn-block" onClick={() => go("history")}>View score history</button>
+          <button className="cv-btn cv-btn-quiet cv-btn-block" onClick={() => go("home")}>Back to home</button>
+        </div>
+      </div>
+    ),
+
+    history: (
+      <div className="cv-stack">
+        <div>
+          <div className="cv-eyebrow">Your duo's record</div>
+          <h2>Score history</h2>
+        </div>
+        <ScoreHistory history={history} onClear={() => { setHistory([]); storage.remove(HISTORY_KEY); }} />
+        <button className="cv-btn cv-btn-primary" onClick={() => go("home")}>Back to home</button>
+      </div>
+    ),
+
+    exampleRound: <ExampleRound onBack={() => go("home")} />,
+  };
+
+  return (
+    <div className="cv-root">
+      <style>{CSS}</style>
+      <div className="cv-shell">
+        {phase !== "home" && <TopBar go={go} />}
+        {screens[phase]}
+      </div>
+      {showRules && <HowToPlayModal onClose={() => setShowRules(false)} />}
+    </div>
+  );
+}
+
+/* ------------------------- secret card draw screen ------------------------ */
+
+function SecretCardScreen({ playerName, card, flipped, setFlipped, onDone }) {
+  const [confirmed, setConfirmed] = useState(false);
+  if (!card) return null;
+
+  if (!confirmed) {
+    return (
+      <div className="cv-panel cv-center cv-stack">
+        <div className="cv-eyebrow">Pass the device 📲</div>
+        <h2>{playerName}, view your card.</h2>
+        <p className="cv-sub">Keep it secret!</p>
+        <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setConfirmed(true)}>
+          I'm {playerName} — continue
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cv-stack cv-center">
+      <div className="cv-eyebrow">{playerName}'s secret card</div>
+      <CardDisplay card={card} flipped={flipped} />
+      {!flipped ? (
+        <button className="cv-btn cv-btn-yellow" onClick={() => setFlipped(true)}>Reveal my card</button>
+      ) : (
+        <>
+          <p className="cv-micro">Memorize all three words — you'll pick a difficulty together next.</p>
+          <button className="cv-btn cv-btn-primary" onClick={() => { setFlipped(false); setTimeout(onDone, 350); }}>
+            Hide card & pass on
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ----------------------- initial countdown screen ------------------------- */
+
+function InitialCountdownScreen({ players, initialWords, isMatch, onContinue, onInstant }) {
+  const [stage, setStage] = useState("intro"); // intro → counting → revealed
+
+  return (
+    <div className="cv-panel cv-stack cv-center">
+      <div className="cv-eyebrow">Initial countdown</div>
+
+      {stage === "intro" && (
+        <>
+          <h2>Ready to reveal your starting words?</h2>
+          <p className="cv-sub">This reveals your starting words. It does <strong>not</strong> count as an attempt.</p>
+          <button className="cv-btn cv-btn-primary cv-btn-block" onClick={() => setStage("counting")}>
+            Start countdown
+          </button>
+        </>
+      )}
+
+      {stage === "counting" && <Countdown onDone={() => setStage("revealed")} />}
+
+      {stage === "revealed" && (
+        <>
+          <h2>Your starting words</h2>
+          <div className="cv-words">
+            <span className="cv-chip cv-anim-l">
+              <span className="cv-chip-owner">{players[0]}</span>{initialWords[0]}
+            </span>
+            <span className="cv-plus cv-anim-pop">{isMatch ? "=" : "+"}</span>
+            <span className="cv-chip is-yellow cv-anim-r">
+              <span className="cv-chip-owner">{players[1]}</span>{initialWords[1]}
+            </span>
+          </div>
+          {isMatch ? (
+            <>
+              <h2 className="cv-anim-pop">Whoa — instant convergence! 🤯</h2>
+              <p className="cv-sub">Same starting word, zero attempts. That's as good as it gets.</p>
+              <button className="cv-btn cv-btn-primary cv-btn-block" onClick={onInstant}>See your score</button>
+            </>
+          ) : (
+            <>
+              <p className="cv-sub">Think of the connection. You've got 30 seconds per attempt.</p>
+              <button className="cv-btn cv-btn-yellow cv-btn-block" onClick={onContinue}>Start attempt 1 →</button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
