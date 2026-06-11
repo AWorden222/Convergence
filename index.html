@@ -529,8 +529,9 @@
       <div style="font-size:1rem;font-weight:700;color:var(--text)" id="res-players"></div>
     </div>
     <div class="stack mt-4">
-      <button class="btn btn-primary" onclick="startNewRoom()">▶ New Room</button>
-      <button class="btn btn-secondary" onclick="showLocalHistory()">📋 Score History</button>
+      <div id="res-rematch-area" class="stack"></div>
+      <button class="btn btn-secondary" onclick="startNewRoom()">▶ New Room</button>
+      <button class="btn btn-ghost" onclick="showLocalHistory()">📋 Score History</button>
       <button class="btn btn-ghost" onclick="UI.showScreen('screen-home')">← Back to Home</button>
     </div>
   </div>
@@ -719,6 +720,7 @@ const Local = {
   selectedDiff: null, // locally selected diff (P1 only) before confirming
   hasSubmitted: false,// whether this player already submitted this attempt
   submitting: false,  // debounce flag
+  resultsSaved: false,// guard so each round saves to local history only once
   realtimeSub: null,  // Supabase subscription handle
 };
 
@@ -983,7 +985,19 @@ function subscribeToRoom(roomId) {
 function handleRoomUpdate(room) {
   switch (room.status) {
     case 'card_setup':
-      // P1 gets here via realtime when P2 joins
+      // P1 gets here via realtime when P2 joins.
+      // Also reached on REMATCH — so always refresh my card from the
+      // room row (new cards are dealt each round) and reset round-local state.
+      Local.myCard = Local.playerRole === 'p1' ? room.player1_card : room.player2_card;
+      Local.selectedDiff = null;
+      Local.resultsSaved = false;
+      // Clear any leftover difficulty highlight from the previous round
+      ['easy','medium','hard'].forEach(d => {
+        const el = document.getElementById('diff-' + d);
+        if (el) el.classList.remove('selected');
+      });
+      const sb = document.getElementById('btn-start-round');
+      if (sb) sb.disabled = true;
       renderCardScreen(room);
       break;
     case 'difficulty_selection':
@@ -1069,16 +1083,18 @@ async function markCardReady() {
   document.getElementById('card-ready-status').style.display = '';
   document.getElementById('card-waiting-name').textContent = otherName || 'your partner';
 
-  // If BOTH are now ready, advance to difficulty_selection
-  // Use P1 as the "tiebreaker" writer to avoid double-write
+  // If BOTH are now ready, advance to difficulty_selection.
+  // Whichever player clicked SECOND will see both flags true, so
+  // EITHER player may perform this transition. The .eq('status', ...)
+  // guard makes it safe even if both somehow try at once — only the
+  // first write succeeds, the second matches zero rows and does nothing.
   if (room.player1_ready && room.player2_ready) {
-    if (Local.playerRole === 'p1') {
-      await db
-        .from('convergence_rooms')
-        .update({ status: 'difficulty_selection', updated_at: new Date().toISOString() })
-        .eq('id', Local.roomId);
-    }
-    // P2's realtime listener will pick up the status change
+    await db
+      .from('convergence_rooms')
+      .update({ status: 'difficulty_selection', updated_at: new Date().toISOString() })
+      .eq('id', Local.roomId)
+      .eq('status', 'card_setup');
+    // Both players' realtime listeners will pick up the status change
   }
 }
 
@@ -1233,13 +1249,12 @@ async function submitWord() {
   Local.hasSubmitted = true;
   showSubmittedState(val, room);
 
-  // If BOTH have now submitted, advance to reveal
-  // Use P1 as the canonical writer to prevent race conditions
+  // If BOTH have now submitted, advance to reveal.
+  // Whichever player submitted SECOND sees both submissions, so either
+  // player may trigger the transition. advanceToReveal guards with
+  // .eq('status', 'playing') so the write only happens once.
   if (room.player1_submission && room.player2_submission) {
-    if (Local.playerRole === 'p1') {
-      await advanceToReveal(room);
-    }
-    // P2's realtime listener will get the reveal update automatically
+    await advanceToReveal(room);
   }
 
   Local.submitting = false;
@@ -1247,8 +1262,10 @@ async function submitWord() {
 
 // ============================================================
 // ADVANCE TO REVEAL
-// Called only by P1 once both submissions exist.
+// Called by whichever player submitted second (or both, harmlessly).
 // Computes match, updates history, sets status to 'reveal'.
+// The .eq('status','playing') guard ensures only ONE write succeeds —
+// if both players call this, the second call matches zero rows.
 // ============================================================
 async function advanceToReveal(room) {
   const sub1 = normalize(room.player1_submission);
@@ -1286,7 +1303,8 @@ async function advanceToReveal(room) {
   await db
     .from('convergence_rooms')
     .update(update)
-    .eq('id', Local.roomId);
+    .eq('id', Local.roomId)
+    .eq('status', 'playing');   // guard: only the first caller's write lands
 }
 
 // ============================================================
@@ -1420,12 +1438,20 @@ async function renderResultsScreen(room, fromReveal) {
       .single();
     room = data;
 
-    // P1 updates status to finished so P2 also gets the realtime push
+    // P1 updates status to finished so P2 also gets the realtime push.
+    // Ready flags are reset here so they can be reused for the rematch vote.
     if (Local.playerRole === 'p1' && room && room.status !== 'finished') {
       await db
         .from('convergence_rooms')
-        .update({ status: 'finished', updated_at: new Date().toISOString() })
+        .update({
+          status: 'finished',
+          player1_ready: false,
+          player2_ready: false,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', Local.roomId);
+      room.player1_ready = false;
+      room.player2_ready = false;
     }
   }
 
@@ -1469,18 +1495,119 @@ async function renderResultsScreen(room, fromReveal) {
     }
   });
 
-  // Save to local history
-  saveLocalRound({
-    convergenceWord: room.convergence_word,
-    p1: room.player1_name,
-    p2: room.player2_name,
-    difficulty: room.selected_difficulty,
-    attempts: room.attempt_number,
-    score,
-    level,
-  });
+  // Save to local history — only once per round.
+  // renderResultsScreen can run twice (once from the button click,
+  // once from the realtime 'finished' update), so guard with a flag.
+  if (!Local.resultsSaved) {
+    Local.resultsSaved = true;
+    saveLocalRound({
+      convergenceWord: room.convergence_word,
+      p1: room.player1_name,
+      p2: room.player2_name,
+      difficulty: room.selected_difficulty,
+      attempts: room.attempt_number,
+      score,
+      level,
+    });
+  }
+
+  // Render the rematch vote area. This re-runs on every realtime
+  // update while status is 'finished', so when the OTHER player
+  // presses Play Again, this player's button updates live.
+  renderRematchArea(room);
 
   UI.showScreen('screen-results');
+}
+
+// ============================================================
+// REMATCH — play another round in the SAME room.
+// BOTH players must press "Play Again" before the next round
+// starts (same ready-flag pattern as the card screen).
+// The player whose click makes both flags true performs the
+// actual reset, guarded by .eq('status','finished') so it can
+// only happen once.
+// ============================================================
+async function requestRematch(btn) {
+  if (btn) btn.disabled = true;
+
+  const readyField = Local.playerRole === 'p1' ? 'player1_ready' : 'player2_ready';
+
+  const { data: room, error } = await db
+    .from('convergence_rooms')
+    .update({ [readyField]: true, updated_at: new Date().toISOString() })
+    .eq('id', Local.roomId)
+    .select()
+    .single();
+
+  if (error || !room) {
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // Update my own UI to the waiting state
+  renderRematchArea(room);
+
+  // If both players have now voted for a rematch, perform the reset
+  if (room.player1_ready && room.player2_ready) {
+    await doRematchReset();
+  }
+}
+
+// Renders the rematch button area based on who has voted so far.
+// Three states: nobody ready / opponent ready / I'm ready (waiting).
+function renderRematchArea(room) {
+  const el = document.getElementById('res-rematch-area');
+  if (!el) return;
+
+  const iAmReady   = Local.playerRole === 'p1' ? room.player1_ready : room.player2_ready;
+  const otherReady = Local.playerRole === 'p1' ? room.player2_ready : room.player1_ready;
+  const otherName  = (Local.playerRole === 'p1' ? room.player2_name : room.player1_name) || 'your partner';
+
+  if (iAmReady) {
+    el.innerHTML = `
+      <div class="waiting-box pulsing">
+        <div class="wb-text">Waiting for ${otherName} to accept…</div>
+        <div class="wb-sub">The next round starts when you both press Play Again</div>
+      </div>`;
+  } else if (otherReady) {
+    el.innerHTML = `<button class="btn btn-yellow" onclick="requestRematch(this)">🔄 ${otherName} wants a rematch — Play Again!</button>`;
+  } else {
+    el.innerHTML = `<button class="btn btn-primary" onclick="requestRematch(this)">🔄 Play Again (same room)</button>`;
+  }
+}
+
+// Performs the actual round reset: fresh cards, everything cleared,
+// back to card_setup. Only succeeds once thanks to the status guard.
+async function doRematchReset() {
+  const [card1, card2] = pickTwoCards();
+
+  await db
+    .from('convergence_rooms')
+    .update({
+      status:              'card_setup',
+      player1_card:        card1,
+      player2_card:        card2,
+      player1_ready:       false,
+      player2_ready:       false,
+      selected_difficulty: null,
+      diff_pts:            null,
+      initial_word_a:      null,
+      initial_word_b:      null,
+      current_word_a:      null,
+      current_word_b:      null,
+      player1_submission:  null,
+      player2_submission:  null,
+      attempt_number:      0,
+      converged:           false,
+      convergence_word:    null,
+      final_score:         null,
+      score_level:         null,
+      history:             [],
+      updated_at:          new Date().toISOString(),
+    })
+    .eq('id', Local.roomId)
+    .eq('status', 'finished');   // guard: reset can only happen once
+  // Realtime 'card_setup' update brings both players to the new round
 }
 
 // ============================================================
